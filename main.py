@@ -1,7 +1,3 @@
-@app.get("/")
-async def root():
-    return {"message": "🧙‍♂️ Gnome Horoscope API is running!", "status": "ok"}
-
 import os
 import json
 import random
