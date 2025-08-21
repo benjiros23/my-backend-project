@@ -46,21 +46,26 @@ DAY_CARDS = [
 
 @app.get("/")
 async def root():
-    """Корневой роут - исправляет 404 ошибку"""
+    """Корневой роут"""
     return {
         "message": "🧙‍♂️ Gnome Horoscope API is running!",
         "status": "ok",
+        "version": "1.0.0",
         "endpoints": [
-            "/health",
-            "/api/horoscope",
-            "/api/day-card"
+            "GET /health - проверка работоспособности",
+            "GET /api/horoscope?sign=ЗНАК - получить гороскоп",
+            "POST /api/day-card - получить карту дня"
         ]
     }
 
 @app.get("/health")
 async def health():
     """Проверка работоспособности"""
-    return {"status": "ok", "timestamp": datetime.now(timezone.utc).isoformat()}
+    return {
+        "status": "ok", 
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "service": "Gnome Horoscope API"
+    }
 
 @app.get("/api/horoscope")
 async def get_horoscope(sign: str, date: str = None):
@@ -76,7 +81,8 @@ async def get_horoscope(sign: str, date: str = None):
         "sign": sign,
         "date": date,
         "text": horoscope_text,
-        "cached": False
+        "cached": False,
+        "source": "Gnome Horoscope API"
     }
 
 @app.post("/api/day-card")
@@ -90,13 +96,15 @@ async def get_day_card():
             "title": card["название"],
             "text": card["совет"],
             "reused": False,
-            "date": datetime.now(timezone.utc).strftime("%Y-%m-%d")
+            "date": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
+            "source": "Gnome Horoscope API"
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Ошибка: {str(e)}")
 
-# Для Render
+# Для Render deployment
 if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 8000))
+    print(f"🚀 Запуск Gnome Horoscope API на порту {port}")
     uvicorn.run(app, host="0.0.0.0", port=port)
