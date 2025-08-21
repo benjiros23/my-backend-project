@@ -18,10 +18,15 @@ FRONTEND_URL = "https://gilded-blancmange-ecc392.netlify.app"  # Ваш фрон
 
 app = FastAPI(title="Gnome Horoscope API", version="1.0.0")
 
-# CORS для фронтенда
+# CORS для фронтенда (ОБНОВИТЕ этот блок)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[FRONTEND_URL, "https://gilded-blancmange-ecc392.netlify.app"],
+    allow_origins=[
+        "https://gilded-blancmange-ecc392.netlify.app",  # ✅ Ваш Netlify домен
+        "https://gilded-blancmange-ecc392.netlify.app/", # ✅ С слешем на конце
+        "http://localhost:3000",  # Для разработки
+        "https://localhost:3000"  # На всякий случай
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
