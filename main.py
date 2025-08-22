@@ -66,7 +66,7 @@ class GameConnectionManager:
         if room_id not in self.room_connections:
             self.room_connections[room_id] = []
             
-        self.room_connections[room_id].append(websocket)
+        self.room_connections[room_id].end(websocket)
         logger.info(f"WebSocket подключен к комнате {room_id}")
         
         # Уведомляем всех в комнате о новом подключении
@@ -95,7 +95,7 @@ class GameConnectionManager:
                 try:
                     await connection.send_json(message)
                 except:
-                    dead_connections.append(connection)
+                    dead_connections.end(connection)
             
             # Удаляем мертвые соединения
             for dead in dead_connections:
@@ -186,7 +186,7 @@ game_rooms: Dict[str, GameRoom] = {}
 
 # ============ ОБРАБОТЧИКИ ОШИБОК ============
 
-@app.exception_handler(Exception)
+@.exception_handler(Exception)
 async def general_exception_handler(request: Request, exc: Exception):
     """Обработчик всех исключений"""
     logger.error(f"Unexpected error: {str(exc)}")
@@ -194,7 +194,7 @@ async def general_exception_handler(request: Request, exc: Exception):
 
 # ============ СУЩЕСТВУЮЩИЕ РОУТЫ ============
 
-@app.get("/")
+@.get("/")
 async def root():
     """Корневой роут"""
     return {
@@ -213,7 +213,7 @@ async def root():
         ]
     }
 
-@app.get("/health")
+@.get("/health")
 async def health():
     """Проверка работоспособности"""
     return {
@@ -222,7 +222,7 @@ async def health():
         "service": "Gnome Horoscope API"
     }
 
-@app.get("/api/horoscope")
+@.get("/api/horoscope")
 async def get_horoscope(sign: str, date: str = None):
     """Получить гороскоп для знака зодиака"""
     try:
@@ -246,7 +246,7 @@ async def get_horoscope(sign: str, date: str = None):
         logger.error(f"Ошибка при получении гороскопа: {str(e)}")
         raise HTTPException(status_code=500, detail="Ошибка при получении гороскопа")
 
-@app.post("/api/day-card")
+@.post("/api/day-card")
 async def get_day_card(request: Dict[str, Any] = None):
     """Получить карту дня"""
     try:
@@ -355,37 +355,32 @@ async def create_room(request: dict):
 
 @app.post("/api/join-room")
 async def join_room(request: JoinRoomRequest):
-    """Присоединиться к игровой комнате"""
     try:
         room = game_rooms.get(request.room_id)
-        
         if not room:
             return {"success": False, "message": "Комната не найдена"}
-            
         if len(room.players) >= 2:
             return {"success": False, "message": "Комната полна"}
-            
+
         if request.player_name not in room.players:
             room.players.append(request.player_name)
-            
-        if len(room.players) == 2:
-        room.status = "playing"
-        
-        # Уведомляем через WebSocket
-        await websocket_manager.broadcast_to_room(request.room_id, {
-            "type": "game_ready",
-            "status": "playing",
-            "players": room.players
-        })
-    
-    return {
-        "success": True,
-        "message": "Присоединился к игре!",
-        "players": room.players,
-        "status": room.status
-    }
 
-        
+        if len(room.players) == 2:
+            room.status = "playing"
+            # уведомляем обе стороны через WebSocket
+            await websocket_manager.broadcast_to_room(request.room_id, {
+                "type": "game_ready",
+                "status": "playing",
+                "players": room.players
+            })
+
+        return {
+            "success": True,
+            "message": "Присоединился к игре!",
+            "players": room.players,
+            "status": room.status
+        }
+
     except Exception as e:
         logger.error(f"Ошибка присоединения к комнате: {str(e)}")
         raise HTTPException(status_code=500, detail="Ошибка присоединения к комнате")
