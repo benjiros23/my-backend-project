@@ -38,8 +38,9 @@ class GameRoom(BaseModel):
     players: List[str] = []
     game_type: str = ""
     current_question: int = 0
-    answers: Dict[str, any] = {}
+    answers: Dict[str, Any] = {}  # ✅ ИСПРАВЛЕНО: Any вместо any
     status: str = "waiting"  # waiting, playing, completed
+
 
 class JoinRoomRequest(BaseModel):
     room_id: str
