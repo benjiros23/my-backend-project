@@ -579,27 +579,21 @@ async def get_game_results(room_id: str):
 # ============ WEBSOCKET ============
 @app.websocket("/ws/game/{room_id}")
 async def websocket_game_endpoint(websocket: WebSocket, room_id: str):
+@app.websocket("/ws/game/{room_id}")
+async def websocket_game_endpoint(websocket: WebSocket, room_id: str):
     """✅ WebSocket для реального времени"""
+    logger.info(f"🔌 Новое WebSocket подключение к комнате: {room_id}")
+    
     await connection_manager.connect(room_id, websocket)
     
     try:
         while True:
-            # Слушаем сообщения от клиента
             data = await websocket.receive_json()
             logger.info(f"📨 WebSocket сообщение в комнате {room_id}: {data}")
             
-            # Обрабатываем разные типы событий
             if data.get("type") == "ping":
                 await websocket.send_json({"type": "pong"})
-            elif data.get("type") == "answer_submitted":
-                # Уведомляем партнера об ответе
-                await connection_manager.broadcast_to_room(room_id, {
-                    "type": "partner_answered",
-                    "question_id": data.get("question_id"),
-                    "player": data.get("player")
-                })
             elif data.get("type") == "join_notification":
-                # Уведомляем о присоединении игрока
                 await connection_manager.broadcast_to_room(room_id, {
                     "type": "player_joined",
                     "player": data.get("player")
