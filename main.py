@@ -598,6 +598,12 @@ async def websocket_game_endpoint(websocket: WebSocket, room_id: str):
                     "question_id": data.get("question_id"),
                     "player": data.get("player")
                 })
+            elif data.get("type") == "join_notification":
+                # Уведомляем о присоединении игрока
+                await connection_manager.broadcast_to_room(room_id, {
+                    "type": "player_joined",
+                    "player": data.get("player")
+                })
                 
     except WebSocketDisconnect:
         logger.info(f"🔌 WebSocket отключен от комнаты {room_id}")
