@@ -385,7 +385,6 @@ async def join_room(request: JoinRoomRequest):
         "status": room.status
     }
 
-        }
         
     except Exception as e:
         logger.error(f"Ошибка присоединения к комнате: {str(e)}")
