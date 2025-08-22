@@ -57,6 +57,29 @@ async def root():
             "POST /api/day-card - получить карту дня"
         ]
     }
+    @app.get("/api/favorites")
+async def get_favorites(initData: str = ""):
+    """Получить избранное пользователя"""
+    try:
+        # Пока возвращаем пустой список, можно потом добавить реальную логику
+        return {
+            "favorites": [],
+            "success": True
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Ошибка: {str(e)}")
+
+@app.post("/api/favorites")
+async def add_favorite(request: dict):
+    """Добавить в избранное"""
+    try:
+        return {
+            "success": True,
+            "message": "Добавлено в избранное"
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Ошибка: {str(e)}")
+
 
 @app.get("/health")
 async def health():
