@@ -677,8 +677,19 @@ async def robots_txt():
     return "User-agent: *\nDisallow: /"
 
 # Для Render deployment
+# В конце main.py измените запуск:
 if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 8000))
     logger.info(f"🚀 Запуск Gnome Horoscope API на порту {port}")
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    
+    # ✅ Настройки для WebSocket
+    uvicorn.run(
+        app, 
+        host="0.0.0.0", 
+        port=port,
+        ws_ping_interval=20,      # Пинг каждые 20 секунд
+        ws_ping_timeout=20,       # Таймаут пинга 20 секунд  
+        ws_max_size=16777216      # Максимальный размер сообщения
+    )
+
