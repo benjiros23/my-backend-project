@@ -9,6 +9,9 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Dict, Any, List, Optional
+from fastapi import WebSocket, WebSocketDisconnect
+from typing import Dict, List
+
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
@@ -53,6 +56,50 @@ class AnswerRequest(BaseModel):
     question_id: int
     answer: str
     initData: str = ""
+class GameConnectionManager:
+    def __init__(self):
+        self.room_connections: Dict[str, List[WebSocket]] = {}
+    
+    async def connect_to_room(self, room_id: str, websocket: WebSocket):
+        await websocket.accept()
+        
+        if room_id not in self.room_connections:
+            self.room_connections[room_id] = []
+            
+        self.room_connections[room_id].append(websocket)
+        logger.info(f"WebSocket подключен к комнате {room_id}")
+        
+        # Уведомляем всех в комнате о новом подключении
+        await self.broadcast_to_room(room_id, {
+            "type": "player_joined",
+            "players_count": len(self.room_connections[room_id])
+        })
+    
+    async def disconnect_from_room(self, room_id: str, websocket: WebSocket):
+        if room_id in self.room_connections:
+            self.room_connections[room_id].remove(websocket)
+            
+            if not self.room_connections[room_id]:
+                del self.room_connections[room_id]
+            else:
+                await self.broadcast_to_room(room_id, {
+                    "type": "player_left",
+                    "players_count": len(self.room_connections[room_id])
+                })
+    
+    async def broadcast_to_room(self, room_id: str, message: dict):
+        if room_id in self.room_connections:
+            dead_connections = []
+            
+            for connection in self.room_connections[room_id]:
+                try:
+                    await connection.send_json(message)
+                except:
+                    dead_connections.append(connection)
+            
+            # Удаляем мертвые соединения
+            for dead in dead_connections:
+                self.room_connections[room_id].remove(dead)
 
 # ============ ДАННЫЕ ============
 
@@ -321,15 +368,23 @@ async def join_room(request: JoinRoomRequest):
         if request.player_name not in room.players:
             room.players.append(request.player_name)
             
-        # Если два игрока - начинаем игру
         if len(room.players) == 2:
-            room.status = "playing"
-            
-        return {
-            "success": True,
-            "message": "Присоединился к игре!",
-            "players": room.players,
-            "status": room.status
+        room.status = "playing"
+        
+        # Уведомляем через WebSocket
+        await websocket_manager.broadcast_to_room(request.room_id, {
+            "type": "game_ready",
+            "status": "playing",
+            "players": room.players
+        })
+    
+    return {
+        "success": True,
+        "message": "Присоединился к игре!",
+        "players": room.players,
+        "status": room.status
+    }
+
         }
         
     except Exception as e:
@@ -396,6 +451,25 @@ async def get_game_question(room_id: str):
     except Exception as e:
         logger.error(f"Ошибка получения вопроса: {str(e)}")
         raise HTTPException(status_code=500, detail="Ошибка получения вопроса")
+@app.websocket("/ws/game/{room_id}")
+async def websocket_game_endpoint(websocket: WebSocket, room_id: str):
+    await websocket_manager.connect_to_room(room_id, websocket)
+    
+    try:
+        while True:
+            # Слушаем сообщения от клиента
+            data = await websocket.receive_json()
+            
+            # Обрабатываем разные типы событий
+            if data["type"] == "answer_submitted":
+                # Уведомляем партнера об ответе
+                await websocket_manager.broadcast_to_room(room_id, {
+                    "type": "partner_answered",
+                    "question_id": data["question_id"]
+                })
+                
+    except WebSocketDisconnect:
+        await websocket_manager.disconnect_from_room(room_id, websocket)
 
 @app.post("/api/submit-answer")
 async def submit_answer(request: AnswerRequest):
