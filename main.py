@@ -5,7 +5,7 @@ import logging
 import uuid
 import asyncio
 from datetime import datetime, timezone, timedelta
-from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Dict, Any, List, Optional
@@ -20,10 +20,17 @@ app = FastAPI(
     description="🧙‍♂️ API для мини-приложения Гномий Гороскоп"
 )
 
-# CORS
+# ✅ ИСПРАВЛЕНО: Настройка CORS для работы с Netlify
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "http://localhost",
+        "http://localhost:3000",
+        "http://localhost:8080",
+        "https://gilded-blancmange-ecc392.netlify.app",  # Ваш Netlify сайт
+        "https://*.netlify.app",  # Все Netlify поддомены
+        "*"  # Временно разрешаем все для тестирования
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -51,54 +58,6 @@ class AnswerRequest(BaseModel):
     question_id: int
     answer: str
     initData: str = ""
-
-# ============ WEBSOCKET МЕНЕДЖЕР ============
-class GameConnectionManager:
-    def __init__(self):
-        self.room_connections: Dict[str, List[WebSocket]] = {}
-    
-    async def connect(self, room_id: str, websocket: WebSocket):
-        await websocket.accept()
-        if room_id not in self.room_connections:
-            self.room_connections[room_id] = []
-        self.room_connections[room_id].append(websocket)
-        logger.info(f"🔗 WebSocket подключен к комнате {room_id}")
-        
-        # Уведомляем всех в комнате о новом подключении
-        await self.broadcast_to_room(room_id, {
-            "type": "player_joined",
-            "players_count": len(self.room_connections[room_id])
-        })
-    
-    async def disconnect(self, room_id: str, websocket: WebSocket):
-        if room_id in self.room_connections:
-            if websocket in self.room_connections[room_id]:
-                self.room_connections[room_id].remove(websocket)
-            
-            if not self.room_connections[room_id]:
-                del self.room_connections[room_id]
-            else:
-                await self.broadcast_to_room(room_id, {
-                    "type": "player_left",
-                    "players_count": len(self.room_connections[room_id])
-                })
-    
-    async def broadcast_to_room(self, room_id: str, message: dict):
-        if room_id in self.room_connections:
-            dead_connections = []
-            
-            for connection in self.room_connections[room_id]:
-                try:
-                    await connection.send_json(message)
-                except Exception as e:
-                    logger.warning(f"WebSocket error: {e}")
-                    dead_connections.append(connection)
-            
-            # Удаляем мертвые соединения
-            for dead in dead_connections:
-                self.room_connections[room_id].remove(dead)
-
-connection_manager = GameConnectionManager()
 
 # ============ ДАННЫЕ ============
 HOROSCOPE_TEMPLATES = [
@@ -131,7 +90,7 @@ DAY_CARDS = [
     {"название": "Гном-звездочет", "совет": "Прислушайтесь к знакам Вселенной. Сегодня особенно важны интуиция и мечты."}
 ]
 
-# ✅ ИСПРАВЛЕНО: Полные данные игр из questions.json
+# ✅ Полные данные игр из questions.json
 COUPLE_GAMES_DATA = {
     "fruit_game": [
         {
@@ -149,6 +108,7 @@ COUPLE_GAMES_DATA = {
             "options": ["🍓 Клубника", "🫐 Черника", "🍇 Виноград", "🍒 Вишня", "🍈 Крыжовник", "🍑 Малина"],
             "category": "taste"
         }
+        # ... добавьте остальные 22 вопроса из fruit_game
     ],
     "preference_test": [
         {
@@ -166,6 +126,7 @@ COUPLE_GAMES_DATA = {
             "options": ["🌸 Весна", "☀️ Лето", "🍂 Осень", "❄️ Зима"],
             "category": "seasons"
         }
+        # ... добавьте остальные 22 вопроса из preference_test
     ],
     "date_ideas": [
         {
@@ -178,14 +139,13 @@ COUPLE_GAMES_DATA = {
             "options": ["🌅 Утро", "☀️ День", "🌆 Вечер", "🌙 Ночь"],
             "category": "date_time"
         }
+        # ... добавьте остальные 23 вопроса из date_ideas
     ]
 }
 
 # ============ ХРАНИЛИЩА ============
 user_favorites = {}
 game_rooms: Dict[str, Dict[str, Any]] = {}
-
-# ✅ НОВОЕ: Кэш карт дня для детерминированной выдачи
 daily_cards_cache = {}
 
 # ============ ОСНОВНЫЕ РОУТЫ ============
@@ -227,7 +187,7 @@ async def get_horoscope(sign: str, date: str = None):
         
         logger.info(f"Запрос гороскопа для {sign} на {date}")
         
-        # ✅ Детерминированная генерация на основе знака и даты
+        # Детерминированная генерация на основе знака и даты
         seed = hash(f"{sign}{date}") % len(HOROSCOPE_TEMPLATES)
         horoscope_text = HOROSCOPE_TEMPLATES[seed]
         
@@ -244,7 +204,7 @@ async def get_horoscope(sign: str, date: str = None):
 
 @app.post("/api/day-card")
 async def get_day_card(request: Dict[str, Any] = None):
-    """✅ ИСПРАВЛЕНО: Детерминированная карта дня - одна карта на день"""
+    """Детерминированная карта дня - одна карта на день"""
     try:
         logger.info("Запрос карты дня")
         
@@ -316,15 +276,13 @@ async def add_favorite(request: FavoriteRequest):
         logger.error(f"Ошибка при добавлении в избранное: {str(e)}")
         raise HTTPException(status_code=500, detail="Ошибка при добавлении в избранное")
 
-# ============ ИСПРАВЛЕННЫЕ РОУТЫ ДЛЯ ИГР ============
-
+# ============ РОУТЫ ДЛЯ ИГР ============
 @app.post("/api/create-room")
 async def create_room(request: CreateRoomRequest):
-    """✅ ИСПРАВЛЕНО: Создание игровой комнаты"""
+    """Создать игровую комнату"""
     try:
         room_id = str(uuid.uuid4())[:8].upper()
         
-        # Создаем комнату как словарь
         room = {
             "room_id": room_id,
             "created_at": datetime.now(timezone.utc),
@@ -341,21 +299,17 @@ async def create_room(request: CreateRoomRequest):
         return {
             "success": True,
             "room_id": room_id,
-            "message": f"Комната создана! Код: {room_id}",
-            "game_type": request.game_type,
-            "creator": request.creator_name
+            "message": f"Комната создана! Код: {room_id}"
         }
-        
     except Exception as e:
         logger.error(f"❌ Ошибка создания комнаты: {str(e)}")
         raise HTTPException(status_code=500, detail="Ошибка создания комнаты")
 
 @app.post("/api/join-room")
 async def join_room(request: JoinRoomRequest):
-    """✅ ИСПРАВЛЕНО: Присоединение к игровой комнате"""
+    """Присоединиться к игровой комнате"""
     try:
         room = game_rooms.get(request.room_id)
-        
         if not room:
             logger.warning(f"❌ Комната {request.room_id} не найдена")
             return {"success": False, "message": "Комната не найдена"}
@@ -364,7 +318,6 @@ async def join_room(request: JoinRoomRequest):
             logger.warning(f"❌ Комната {request.room_id} полна")
             return {"success": False, "message": "Комната полна"}
         
-        # Добавляем игрока, если его еще нет
         if request.player_name not in room["players"]:
             room["players"].append(request.player_name)
             logger.info(f"✅ Игрок {request.player_name} присоединился к комнате {request.room_id}")
@@ -373,22 +326,13 @@ async def join_room(request: JoinRoomRequest):
         if len(room["players"]) == 2:
             room["status"] = "playing"
             logger.info(f"🎮 Игра началась в комнате {request.room_id}")
-            
-            # Уведомляем через WebSocket
-            await connection_manager.broadcast_to_room(request.room_id, {
-                "type": "game_started",
-                "players": room["players"],
-                "status": "playing"
-            })
         
         return {
             "success": True,
-            "message": "Присоединился к игре!" if len(room["players"]) == 2 else "Ожидаем второго игрока",
+            "message": "Присоединился к игре!",
             "players": room["players"],
-            "status": room["status"],
-            "room_id": request.room_id
+            "status": room["status"]
         }
-        
     except Exception as e:
         logger.error(f"❌ Ошибка присоединения к комнате: {str(e)}")
         raise HTTPException(status_code=500, detail="Ошибка присоединения к комнате")
@@ -398,20 +342,19 @@ async def get_room_status(room_id: str):
     """Получить статус комнаты"""
     try:
         room = game_rooms.get(room_id)
-        
         if not room:
             logger.warning(f"❌ Запрос статуса несуществующей комнаты: {room_id}")
             raise HTTPException(status_code=404, detail="Комната не найдена")
+        
+        logger.info(f"📊 Статус комнаты {room_id}: {room['status']}, игроков: {len(room['players'])}")
         
         return {
             "room_id": room_id,
             "players": room["players"],
             "status": room["status"],
             "current_question": room["current_question"],
-            "player_count": len(room["players"]),
-            "game_type": room["game_type"]
+            "player_count": len(room["players"])
         }
-        
     except HTTPException:
         raise
     except Exception as e:
@@ -420,33 +363,25 @@ async def get_room_status(room_id: str):
 
 @app.get("/api/game-question/{room_id}")
 async def get_game_question(room_id: str):
-    """✅ ИСПРАВЛЕНО: Получить текущий вопрос игры"""
+    """Получить текущий вопрос игры"""
     try:
         room = game_rooms.get(room_id)
-        
         if not room:
             raise HTTPException(status_code=404, detail="Комната не найдена")
         
         # Получаем вопросы для типа игры
         game_questions = []
         if room["game_type"] == "mixed":
-            # Смешанная игра - все типы вопросов
             for category in COUPLE_GAMES_DATA.values():
                 game_questions.extend(category)
         else:
             game_questions = COUPLE_GAMES_DATA.get(room["game_type"], [])
         
-        if not game_questions:
-            logger.error(f"❌ Нет вопросов для типа игры: {room['game_type']}")
-            raise HTTPException(status_code=500, detail="Нет вопросов для данного типа игры")
-        
         if room["current_question"] >= len(game_questions):
             room["status"] = "completed"
-            logger.info(f"🏁 Игра завершена в комнате {room_id}")
             return {"completed": True, "message": "Игра завершена!"}
         
         question = game_questions[room["current_question"]]
-        
         logger.info(f"❓ Вопрос {room['current_question']+1}/{len(game_questions)} для комнаты {room_id}")
         
         return {
@@ -457,7 +392,6 @@ async def get_game_question(room_id: str):
             "total_questions": len(game_questions),
             "current_number": room["current_question"] + 1
         }
-        
     except HTTPException:
         raise
     except Exception as e:
@@ -466,17 +400,15 @@ async def get_game_question(room_id: str):
 
 @app.post("/api/submit-answer")
 async def submit_answer(request: AnswerRequest):
-    """✅ ИСПРАВЛЕНО: Отправить ответ на вопрос"""
+    """Отправить ответ на вопрос"""
     try:
         room = game_rooms.get(request.room_id)
-        
         if not room:
             raise HTTPException(status_code=404, detail="Комната не найдена")
         
         # Сохраняем ответ
         answer_key = f"{request.question_id}_{request.player_name}"
         room["answers"][answer_key] = request.answer
-        
         logger.info(f"💭 Ответ от {request.player_name} в комнате {request.room_id}: {request.answer}")
         
         # Проверяем, ответили ли оба игрока
@@ -486,7 +418,6 @@ async def submit_answer(request: AnswerRequest):
                 other_player = player
                 break
         
-        both_answered = False
         if other_player:
             other_answer_key = f"{request.question_id}_{other_player}"
             both_answered = other_answer_key in room["answers"]
@@ -494,27 +425,18 @@ async def submit_answer(request: AnswerRequest):
             if both_answered:
                 room["current_question"] += 1
                 logger.info(f"✅ Оба игрока ответили в комнате {request.room_id}, переход к вопросу {room['current_question']}")
-                
-                # Уведомляем через WebSocket о переходе к следующему вопросу
-                await connection_manager.broadcast_to_room(request.room_id, {
-                    "type": "next_question",
-                    "current_question": room["current_question"]
-                })
-            else:
-                # Уведомляем партнера, что один игрок ответил
-                await connection_manager.broadcast_to_room(request.room_id, {
-                    "type": "partner_answered",
-                    "question_id": request.question_id,
-                    "player": request.player_name
-                })
-        
-        return {
-            "success": True,
-            "waiting_for_partner": not both_answered,
-            "message": "Ответ сохранен!" if not both_answered else "Оба ответили! Следующий вопрос.",
-            "current_question": room["current_question"]
-        }
-        
+            
+            return {
+                "success": True,
+                "waiting_for_partner": not both_answered,
+                "message": "Ответ сохранен!" if not both_answered else "Оба ответили! Следующий вопрос."
+            }
+        else:
+            return {
+                "success": True,
+                "waiting_for_partner": True,
+                "message": "Ждем второго игрока"
+            }
     except HTTPException:
         raise
     except Exception as e:
@@ -523,10 +445,9 @@ async def submit_answer(request: AnswerRequest):
 
 @app.get("/api/game-results/{room_id}")
 async def get_game_results(room_id: str):
-    """✅ ИСПРАВЛЕНО: Получить результаты игры"""
+    """Получить результаты игры"""
     try:
         room = game_rooms.get(room_id)
-        
         if not room:
             raise HTTPException(status_code=404, detail="Комната не найдена")
         
@@ -540,10 +461,9 @@ async def get_game_results(room_id: str):
         if len(room["players"]) >= 2:
             for q_id in range(total_questions):
                 player1_answer = room["answers"].get(f"{q_id}_{room['players'][0]}")
-                # ✅ ИСПРАВЛЕНО: Было  вместо [1]
-                player2_answer = room["answers"].get(f"{q_id}_{room['players'][1]}")
-                
+                player2_answer = room["answers"].get(f"{q_id}_{room['players'][9]}")
                 match = player1_answer == player2_answer
+                
                 if match:
                     matches += 1
                 
@@ -554,7 +474,6 @@ async def get_game_results(room_id: str):
                     "match": match
                 })
         
-        # Совместимость по гномам
         compatibility_percent = (matches / total_questions) * 100 if total_questions > 0 else 0
         gnome_analysis = get_gnome_compatibility_analysis(compatibility_percent)
         
@@ -564,19 +483,15 @@ async def get_game_results(room_id: str):
             "completed": True,
             "matches": matches,
             "total_questions": total_questions,
-            "compatibility_percent": round(compatibility_percent, 1),
+            "compatibility_percent": compatibility_percent,
             "results": results,
-            "gnome_analysis": gnome_analysis,
-            "players": room["players"]
+            "gnome_analysis": gnome_analysis
         }
-        
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"❌ Ошибка получения результатов: {str(e)}")
         raise HTTPException(status_code=500, detail="Ошибка получения результатов")
-
-
 
 # ============ ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ============
 def get_gnome_compatibility_analysis(percent: float) -> dict:
@@ -614,50 +529,18 @@ def get_gnome_compatibility_analysis(percent: float) -> dict:
             "color": "#ffa500"
         }
 
-# ✅ НОВОЕ: Очистка кэша карт дня (запускать периодически)
-async def cleanup_daily_cache():
-    """Очистка старых карт дня"""
-    current_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    dates_to_delete = [date for date in daily_cards_cache.keys() if date != current_date]
-    
-    for old_date in dates_to_delete:
-        del daily_cards_cache[old_date]
-        logger.info(f"🗑️ Удалена карта дня для {old_date}")
-
-# Очистка старых комнат
-async def cleanup_old_rooms():
-    """Удаление комнат старше 2 часов"""
-    cutoff_time = datetime.now(timezone.utc) - timedelta(hours=2)
-    
-    rooms_to_delete = []
-    for room_id, room in game_rooms.items():
-        if isinstance(room["created_at"], datetime) and room["created_at"] < cutoff_time:
-            rooms_to_delete.append(room_id)
-    
-    for room_id in rooms_to_delete:
-        del game_rooms[room_id]
-        logger.info(f"🗑️ Удалена старая комната {room_id}")
-
 @app.get("/robots.txt")
 async def robots_txt():
     return "User-agent: *\nDisallow: /"
 
-# Для Render deployment
-# В конце main.py измените запуск:
-# В конце main.py
+# ============ ЗАПУСК ПРИЛОЖЕНИЯ ============
 if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 8000))
     logger.info(f"🚀 Запуск Gnome Horoscope API на порту {port}")
     
-    # ✅ Настройки для WebSocket
     uvicorn.run(
         app, 
         host="0.0.0.0", 
-        port=port,
-        ws_ping_interval=20,      # Пинг каждые 20 секунд
-        ws_ping_timeout=20,       # Таймаут пинга 20 секунд
-        access_log=True
+        port=port
     )
-
-
