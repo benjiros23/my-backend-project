@@ -497,9 +497,11 @@ async def join_room(request: JoinRoomRequest):
             "players": room["players"],
             "status": room["status"]
         }
+        
     except Exception as e:
         logger.error(f"❌ Ошибка присоединения к комнате: {str(e)}")
         raise HTTPException(status_code=500, detail="Ошибка присоединения к комнате")
+
 
 
 @app.get("/api/room-status/{room_id}")
