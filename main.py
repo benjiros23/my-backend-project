@@ -3,21 +3,46 @@ import json
 import random
 import logging
 import uuid
-import asyncio
+import traceback
 from datetime import datetime, timezone, timedelta
+from pathlib import Path
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from typing import Dict, Any, List, Optional
-# ✅ В начале main.py добавьте более подробное логирование
-import traceback
 
+# ============ НАСТРОЙКА ЛОГИРОВАНИЯ ============
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
+logger = logging.getLogger(__name__)
 
-# ✅ Глобальный обработчик ошибок
+# ============ СОЗДАНИЕ ПРИЛОЖЕНИЯ ============
+app = FastAPI(
+    title="Gnome Horoscope API",
+    version="2.0.0",
+    description="🧙‍♂️ API для мини-приложения Гномий Гороскоп"
+)
+
+# ============ CORS НАСТРОЙКА ============
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost",
+        "http://localhost:3000",
+        "http://localhost:8080",
+        "https://gilded-blancmange-ecc392.netlify.app",
+        "https://*.netlify.app",
+        "*"
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# ============ ГЛОБАЛЬНЫЙ ОБРАБОТЧИК ОШИБОК ============
 @app.exception_handler(500)
 async def internal_server_error_handler(request, exc):
     logger.error(f"❌ 500 Error на {request.url}: {str(exc)}")
@@ -27,34 +52,7 @@ async def internal_server_error_handler(request, exc):
         content={"detail": "Внутренняя ошибка сервера", "error": str(exc)}
     )
 
-
-# Настройка логирования
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
-app = FastAPI(
-    title="Gnome Horoscope API",
-    version="2.0.0",
-    description="🧙‍♂️ API для мини-приложения Гномий Гороскоп"
-)
-
-# ✅ ИСПРАВЛЕНО: Настройка CORS для работы с Netlify
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[
-        "http://localhost",
-        "http://localhost:3000",
-        "http://localhost:8080",
-        "https://gilded-blancmange-ecc392.netlify.app",  # Ваш Netlify сайт
-        "https://*.netlify.app",  # Все Netlify поддомены
-        "*"  # Временно разрешаем все для тестирования
-    ],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-# ============ МОДЕЛИ ============
+# ============ МОДЕЛИ ДАННЫХ ============
 class FavoriteRequest(BaseModel):
     initData: str = ""
     type: str
@@ -77,7 +75,7 @@ class AnswerRequest(BaseModel):
     answer: str
     initData: str = ""
 
-# ============ ДАННЫЕ ============
+# ============ ДАННЫЕ ПРИЛОЖЕНИЯ ============
 HOROSCOPE_TEMPLATES = [
     "Звезды советуют вам проявить инициативу! Сегодня удачный день для новых начинаний.",
     "Прислушайтесь к своей интуиции - она не подведет в важных решениях.",
@@ -108,73 +106,81 @@ DAY_CARDS = [
     {"название": "Гном-звездочет", "совет": "Прислушайтесь к знакам Вселенной. Сегодня особенно важны интуиция и мечты."}
 ]
 
-# ✅ Полные данные игр из questions.json
-COUPLE_GAMES_DATA = {
-    "fruit_game": [
-        {
-            "question": "Какой фрукт больше всего любит ваш партнер?",
-            "options": ["🍎 Яблоко", "🍌 Банан", "🍊 Апельсин", "🍇 Виноград", "🥭 Манго", "🍓 Клубника"],
-            "category": "taste"
-        },
-        {
-            "question": "Какой экзотический фрукт хотел бы попробовать ваш партнер?",
-            "options": ["🥥 Кокос", "🥝 Киви", "🍍 Ананас", "🥭 Манго", "🍈 Дыня", "🍑 Черешня"],
-            "category": "taste"
-        },
-        {
-            "question": "Какую ягоду предпочитает ваш партнер?",
-            "options": ["🍓 Клубника", "🫐 Черника", "🍇 Виноград", "🍒 Вишня", "🍈 Крыжовник", "🍑 Малина"],
-            "category": "taste"
-        }
-        # ... добавьте остальные 22 вопроса из fruit_game
-    ],
-    "preference_test": [
-        {
-            "question": "Какой цвет больше всего нравится вашему партнеру?",
-            "options": ["❤️ Красный", "💙 Синий", "💚 Зеленый", "💛 Желтый", "💜 Фиолетовый", "🖤 Черный"],
-            "category": "colors"
-        },
-        {
-            "question": "Какую музыку предпочитает ваш партнер?",
-            "options": ["🎸 Рок", "🎵 Поп", "🎹 Классика", "🎺 Джаз", "🎤 Рэп", "🎻 Инди"],
-            "category": "music"
-        },
-        {
-            "question": "Какое время года любит ваш партнер?",
-            "options": ["🌸 Весна", "☀️ Лето", "🍂 Осень", "❄️ Зима"],
-            "category": "seasons"
-        }
-        # ... добавьте остальные 22 вопроса из preference_test
-    ],
-    "date_ideas": [
-        {
-            "question": "Идеальное свидание для вашего партнера:",
-            "options": ["🎬 Кино", "🍽️ Ресторан", "🏞️ Прогулка в парке", "🏠 Дома с фильмом", "🎭 Театр", "🎪 Развлечения"],
-            "category": "date_type"
-        },
-        {
-            "question": "Какое время для свидания предпочитает партнер?",
-            "options": ["🌅 Утро", "☀️ День", "🌆 Вечер", "🌙 Ночь"],
-            "category": "date_time"
-        }
-        # ... добавьте остальные 23 вопроса из date_ideas
-    ]
-}
+# ============ ЗАГРУЗКА ВОПРОСОВ ============
+COUPLE_GAMES_DATA = {}
 
-# ============ ХРАНИЛИЩА ============
+def load_questions_from_file():
+    """Загружаем вопросы из JSON файла"""
+    global COUPLE_GAMES_DATA
+    
+    possible_paths = [
+        "questions.json",
+        "./questions.json",
+        "modules/couple-games/questions.json",
+        "./modules/couple-games/questions.json"
+    ]
+    
+    for file_path in possible_paths:
+        try:
+            if Path(file_path).exists():
+                logger.info(f"📁 Найден файл вопросов: {file_path}")
+                
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    COUPLE_GAMES_DATA = json.load(f)
+                
+                total_questions = sum(len(category) for category in COUPLE_GAMES_DATA.values())
+                logger.info(f"✅ Загружено {total_questions} вопросов из {len(COUPLE_GAMES_DATA)} категорий")
+                
+                for category, questions in COUPLE_GAMES_DATA.items():
+                    logger.info(f"  - {category}: {len(questions)} вопросов")
+                
+                return True
+                
+        except Exception as e:
+            logger.warning(f"❌ Ошибка загрузки {file_path}: {e}")
+            continue
+    
+    # Fallback данные если файл не найден
+    logger.warning("⚠️ JSON файл не найден, используем fallback данные")
+    COUPLE_GAMES_DATA = {
+        "fruit_game": [
+            {"question": "Какой фрукт больше всего любит ваш партнер?", "options": ["🍎 Яблоко", "🍌 Банан", "🍊 Апельсин", "🍇 Виноград", "🥭 Манго", "🍓 Клубника"], "category": "taste"},
+            {"question": "Какой экзотический фрукт хотел бы попробовать ваш партнер?", "options": ["🥥 Кокос", "🥝 Киви", "🍍 Ананас", "🥭 Манго", "🍈 Дыня", "🍑 Черешня"], "category": "taste"},
+            {"question": "Какую ягоду предпочитает ваш партнер?", "options": ["🍓 Клубника", "🫐 Черника", "🍇 Виноград", "🍒 Вишня", "🥝 Крыжовник", "🍑 Малина"], "category": "taste"}
+        ],
+        "preference_test": [
+            {"question": "Какой цвет больше всего нравится вашему партнеру?", "options": ["❤️ Красный", "💙 Синий", "💚 Зеленый", "💛 Желтый", "💜 Фиолетовый", "🖤 Черный"], "category": "colors"},
+            {"question": "Какую музыку предпочитает ваш партнер?", "options": ["🎸 Рок", "🎵 Поп", "🎹 Классика", "🎺 Джаз", "🎤 Рэп", "🎻 Инди"], "category": "music"},
+            {"question": "Какое время года любит ваш партнер?", "options": ["🌸 Весна", "☀️ Лето", "🍂 Осень", "❄️ Зима"], "category": "seasons"}
+        ],
+        "date_ideas": [
+            {"question": "Идеальное свидание для вашего партнера:", "options": ["🎬 Кино", "🍽️ Ресторан", "🏞️ Прогулка в парке", "🏠 Дома с фильмом", "🎭 Театр", "🎪 Развлечения"], "category": "date_type"},
+            {"question": "Какое время для свидания предпочитает партнер?", "options": ["🌅 Утро", "☀️ День", "🌆 Вечер", "🌙 Ночь"], "category": "date_time"}
+        ]
+    }
+    return False
+
+# Загружаем вопросы при запуске
+load_questions_from_file()
+
+# ============ ХРАНИЛИЩА ДАННЫХ ============
 user_favorites = {}
 game_rooms: Dict[str, Dict[str, Any]] = {}
 daily_cards_cache = {}
 
-# ============ ОСНОВНЫЕ РОУТЫ ============
+# ============ ОСНОВНЫЕ МАРШРУТЫ ============
 @app.get("/")
 async def root():
+    total_questions = sum(len(category) for category in COUPLE_GAMES_DATA.values())
     return {
         "message": "🧙‍♂️ Gnome Horoscope API is running!",
         "status": "ok",
         "version": "2.0.0",
+        "loaded_questions": total_questions,
+        "categories": list(COUPLE_GAMES_DATA.keys()),
         "endpoints": [
             "GET /health",
+            "GET /api/questions",
             "GET /api/horoscope?sign=ЗНАК",
             "POST /api/day-card",
             "GET /api/favorites",
@@ -205,7 +211,6 @@ async def get_horoscope(sign: str, date: str = None):
         
         logger.info(f"Запрос гороскопа для {sign} на {date}")
         
-        # Детерминированная генерация на основе знака и даты
         seed = hash(f"{sign}{date}") % len(HOROSCOPE_TEMPLATES)
         horoscope_text = HOROSCOPE_TEMPLATES[seed]
         
@@ -222,19 +227,16 @@ async def get_horoscope(sign: str, date: str = None):
 
 @app.post("/api/day-card")
 async def get_day_card(request: Dict[str, Any] = None):
-    """Детерминированная карта дня - одна карта на день"""
+    """Детерминированная карта дня"""
     try:
         logger.info("Запрос карты дня")
         
-        # Получаем текущую дату
         current_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
         
-        # Проверяем кэш
         if current_date in daily_cards_cache:
             card_data = daily_cards_cache[current_date]
             logger.info(f"📦 Карта дня из кэша для {current_date}")
         else:
-            # Детерминированная генерация карты на основе даты
             date_seed = hash(current_date) % len(DAY_CARDS)
             selected_card = DAY_CARDS[date_seed]
             
@@ -246,7 +248,6 @@ async def get_day_card(request: Dict[str, Any] = None):
                 "source": "Gnome Horoscope API"
             }
             
-            # Сохраняем в кэш
             daily_cards_cache[current_date] = card_data
             logger.info(f"🆕 Новая карта дня для {current_date}: {selected_card['название']}")
         
@@ -294,7 +295,17 @@ async def add_favorite(request: FavoriteRequest):
         logger.error(f"Ошибка при добавлении в избранное: {str(e)}")
         raise HTTPException(status_code=500, detail="Ошибка при добавлении в избранное")
 
-# ============ РОУТЫ ДЛЯ ИГР ============
+@app.get("/api/questions")
+async def get_all_questions():
+    """Отдаем все загруженные вопросы"""
+    return {
+        "success": True,
+        "questions": COUPLE_GAMES_DATA,
+        "total_questions": sum(len(category) for category in COUPLE_GAMES_DATA.values()),
+        "categories": list(COUPLE_GAMES_DATA.keys())
+    }
+
+# ============ МАРШРУТЫ ДЛЯ ИГР ============
 @app.post("/api/create-room")
 async def create_room(request: CreateRoomRequest):
     """Создать игровую комнату"""
@@ -340,7 +351,6 @@ async def join_room(request: JoinRoomRequest):
             room["players"].append(request.player_name)
             logger.info(f"✅ Игрок {request.player_name} присоединился к комнате {request.room_id}")
         
-        # Если два игрока - начинаем игру
         if len(room["players"]) == 2:
             room["status"] = "playing"
             logger.info(f"🎮 Игра началась в комнате {request.room_id}")
@@ -387,7 +397,7 @@ async def get_game_question(room_id: str):
         if not room:
             raise HTTPException(status_code=404, detail="Комната не найдена")
         
-        # Получаем вопросы для типа игры
+        # Получаем вопросы из загруженного JSON
         game_questions = []
         if room["game_type"] == "mixed":
             for category in COUPLE_GAMES_DATA.values():
@@ -395,12 +405,16 @@ async def get_game_question(room_id: str):
         else:
             game_questions = COUPLE_GAMES_DATA.get(room["game_type"], [])
         
+        logger.info(f"❓ Комната {room_id}, тип: {room['game_type']}")
+        logger.info(f"📊 Всего вопросов: {len(game_questions)}, текущий: {room['current_question']}")
+        
         if room["current_question"] >= len(game_questions):
             room["status"] = "completed"
+            logger.info(f"🏁 Игра завершена! Пройдено: {room['current_question']}")
             return {"completed": True, "message": "Игра завершена!"}
         
         question = game_questions[room["current_question"]]
-        logger.info(f"❓ Вопрос {room['current_question']+1}/{len(game_questions)} для комнаты {room_id}")
+        logger.info(f"✅ Отдаем вопрос {room['current_question']+1}/{len(game_questions)}")
         
         return {
             "question_id": room["current_question"],
@@ -408,13 +422,16 @@ async def get_game_question(room_id: str):
             "options": question["options"],
             "category": question["category"],
             "total_questions": len(game_questions),
-            "current_number": room["current_question"] + 1
+            "current_number": room["current_question"] + 1,
+            "source": "JSON file"
         }
+        
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"❌ Ошибка получения вопроса: {str(e)}")
-        raise HTTPException(status_code=500, detail="Ошибка получения вопроса")
+        logger.error(f"❌ Ошибка get_game_question: {str(e)}")
+        logger.error(f"📋 Трассировка: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/submit-answer")
 async def submit_answer(request: AnswerRequest):
@@ -424,7 +441,6 @@ async def submit_answer(request: AnswerRequest):
         if not room:
             raise HTTPException(status_code=404, detail="Комната не найдена")
         
-        # Сохраняем ответ
         answer_key = f"{request.question_id}_{request.player_name}"
         room["answers"][answer_key] = request.answer
         logger.info(f"💭 Ответ от {request.player_name} в комнате {request.room_id}: {request.answer}")
@@ -463,7 +479,7 @@ async def submit_answer(request: AnswerRequest):
 
 @app.get("/api/game-results/{room_id}")
 async def get_game_results(room_id: str):
-    """Получить результаты игры с подробным логированием"""
+    """Получить результаты игры с обработкой ошибок"""
     try:
         logger.info(f"🏆 Запрос результатов для комнаты: {room_id}")
         
@@ -476,7 +492,7 @@ async def get_game_results(room_id: str):
             logger.warning(f"⚠️ Игра в комнате {room_id} еще не завершена")
             return {"completed": False, "message": "Игра еще не завершена"}
         
-        # ✅ Проверяем данные
+        # Проверяем данные
         players = room.get("players", [])
         answers = room.get("answers", {})
         current_question = room.get("current_question", 0)
@@ -486,7 +502,7 @@ async def get_game_results(room_id: str):
         if len(players) < 2:
             raise HTTPException(status_code=400, detail="Недостаточно игроков")
         
-        # Подсчет совпадений
+        # Безопасный подсчет совпадений
         matches = 0
         total_questions = current_question
         results = []
@@ -513,6 +529,7 @@ async def get_game_results(room_id: str):
                 logger.error(f"❌ Ошибка обработки вопроса {q_id}: {str(e)}")
                 continue
         
+        # Безопасное вычисление процента
         compatibility_percent = (matches / total_questions * 100) if total_questions > 0 else 0
         gnome_analysis = get_gnome_compatibility_analysis(compatibility_percent)
         
@@ -530,13 +547,15 @@ async def get_game_results(room_id: str):
     except HTTPException:
         raise
     except Exception as e:
-        import traceback
+        # Подробное логирование критических ошибок
         error_trace = traceback.format_exc()
-        logger.error(f"❌ Критическая ошибка: {str(e)}")
-        logger.error(f"📋 Трассировка: {error_trace}")
+        logger.error(f"❌ Критическая ошибка в get_game_results: {str(e)}")
+        logger.error(f"📋 Полная трассировка: {error_trace}")
         
-        raise HTTPException(status_code=500, detail=f"Внутренняя ошибка: {str(e)}")
-
+        raise HTTPException(
+            status_code=500, 
+            detail=f"Внутренняя ошибка сервера: {str(e)}"
+        )
 
 # ============ ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ============
 def get_gnome_compatibility_analysis(percent: float) -> dict:
