@@ -36,8 +36,9 @@ app.add_middleware(
 )
 
 @app.options("/{full_path:path}")
-async  preflight_handler(request: Request, full_path: str):
+async def preflight_handler(request: Request, full_path: str):
     return {"message": "OK"}
+
 
 # ============ ГЛОБАЛЬНЫЙ ОБРАБОТЧИК ОШИБОК ============
 @app.exception_handler(500)
