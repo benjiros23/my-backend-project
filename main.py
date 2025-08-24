@@ -9,6 +9,24 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Dict, Any, List, Optional
+# ✅ В начале main.py добавьте более подробное логирование
+import traceback
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+
+# ✅ Глобальный обработчик ошибок
+@app.exception_handler(500)
+async def internal_server_error_handler(request, exc):
+    logger.error(f"❌ 500 Error на {request.url}: {str(exc)}")
+    logger.error(f"📋 Трассировка: {traceback.format_exc()}")
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Внутренняя ошибка сервера", "error": str(exc)}
+    )
+
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
@@ -445,25 +463,43 @@ async def submit_answer(request: AnswerRequest):
 
 @app.get("/api/game-results/{room_id}")
 async def get_game_results(room_id: str):
-    """Получить результаты игры"""
+    """Получить результаты игры с подробным логированием"""
     try:
+        logger.info(f"🏆 Запрос результатов для комнаты: {room_id}")
+        
         room = game_rooms.get(room_id)
         if not room:
+            logger.error(f"❌ Комната {room_id} не найдена")
             raise HTTPException(status_code=404, detail="Комната не найдена")
         
         if room["status"] != "completed":
+            logger.warning(f"⚠️ Игра в комнате {room_id} еще не завершена")
             return {"completed": False, "message": "Игра еще не завершена"}
         
+        # ✅ Проверяем данные
+        players = room.get("players", [])
+        answers = room.get("answers", {})
+        current_question = room.get("current_question", 0)
+        
+        logger.info(f"📊 Игроки={len(players)}, ответы={len(answers)}, вопросов={current_question}")
+        
+        if len(players) < 2:
+            raise HTTPException(status_code=400, detail="Недостаточно игроков")
+        
+        # Подсчет совпадений
         matches = 0
-        total_questions = room["current_question"]
+        total_questions = current_question
         results = []
         
-        if len(room["players"]) >= 2:
-            for q_id in range(total_questions):
-                player1_answer = room["answers"].get(f"{q_id}_{room['players'][0]}")
-                player2_answer = room["answers"].get(f"{q_id}_{room['players'][9]}")
-                match = player1_answer == player2_answer
+        for q_id in range(total_questions):
+            try:
+                player1_key = f"{q_id}_{players[0]}"
+                player2_key = f"{q_id}_{players[1]}"
                 
+                player1_answer = answers.get(player1_key)
+                player2_answer = answers.get(player2_key)
+                
+                match = player1_answer == player2_answer and player1_answer is not None
                 if match:
                     matches += 1
                 
@@ -473,11 +509,14 @@ async def get_game_results(room_id: str):
                     "player2_answer": player2_answer,
                     "match": match
                 })
+            except Exception as e:
+                logger.error(f"❌ Ошибка обработки вопроса {q_id}: {str(e)}")
+                continue
         
-        compatibility_percent = (matches / total_questions) * 100 if total_questions > 0 else 0
+        compatibility_percent = (matches / total_questions * 100) if total_questions > 0 else 0
         gnome_analysis = get_gnome_compatibility_analysis(compatibility_percent)
         
-        logger.info(f"🎯 Результаты игры в комнате {room_id}: {matches}/{total_questions} совпадений ({compatibility_percent:.1f}%)")
+        logger.info(f"✅ Результаты: {matches}/{total_questions} ({compatibility_percent:.1f}%)")
         
         return {
             "completed": True,
@@ -487,11 +526,17 @@ async def get_game_results(room_id: str):
             "results": results,
             "gnome_analysis": gnome_analysis
         }
+        
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"❌ Ошибка получения результатов: {str(e)}")
-        raise HTTPException(status_code=500, detail="Ошибка получения результатов")
+        import traceback
+        error_trace = traceback.format_exc()
+        logger.error(f"❌ Критическая ошибка: {str(e)}")
+        logger.error(f"📋 Трассировка: {error_trace}")
+        
+        raise HTTPException(status_code=500, detail=f"Внутренняя ошибка: {str(e)}")
+
 
 # ============ ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ============
 def get_gnome_compatibility_analysis(percent: float) -> dict:
