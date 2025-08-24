@@ -576,6 +576,153 @@ async def get_game_results(room_id: str):
     except Exception as e:
         logger.error(f"❌ Критическая ошибка: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+        # ============ РЕТРОГРАДНЫЙ МЕРКУРИЙ ============
+MERCURY_RETROGRADE_2025 = [
+    {
+        "phase": "Mercury Retrograde #1",
+        "pre_shadow_start": "2025-02-28",
+        "retrograde_start": "2025-03-14", 
+        "retrograde_end": "2025-04-07",
+        "post_shadow_end": "2025-04-26",
+        "signs": ["Aries", "Pisces"],
+        "influences": {
+            "communication": "Будьте осторожны в переписке, перечитывайте сообщения дважды",
+            "travel": "Планы поездок могут измениться, проверяйте билеты",
+            "technology": "Делайте резервные копии данных, технические сбои возможны",
+            "relationships": "Старые знакомые могут неожиданно выйти на связь"
+        }
+    },
+    {
+        "phase": "Mercury Retrograde #2", 
+        "pre_shadow_start": "2025-06-29",
+        "retrograde_start": "2025-07-17",
+        "retrograde_end": "2025-08-11", 
+        "post_shadow_end": "2025-08-25",
+        "signs": ["Leo"],
+        "influences": {
+            "creativity": "Пересмотрите творческие проекты, вдохновение найдет новые пути",
+            "self_expression": "Осторожнее с публичными заявлениями и самопрезентацией", 
+            "romance": "В отношениях возможны недопонимания из-за гордости",
+            "performance": "Выступления и презентации требуют особой подготовки"
+        }
+    },
+    {
+        "phase": "Mercury Retrograde #3",
+        "pre_shadow_start": "2025-10-21", 
+        "retrograde_start": "2025-11-09",
+        "retrograde_end": "2025-11-29",
+        "post_shadow_end": "2025-12-16", 
+        "signs": ["Sagittarius"],
+        "influences": {
+            "learning": "Пересмотрите планы обучения, возможны задержки в учебе",
+            "travel": "Дальние поездки требуют особого внимания к деталям",
+            "beliefs": "Время переосмыслить свои взгляды и философию жизни", 
+            "legal": "Юридические вопросы лучше отложить на более поздний срок"
+        }
+    }
+]
+
+def get_mercury_status(date_str: str = None):
+    """Проверяет статус Меркурия на указанную дату"""
+    from datetime import datetime
+    
+    if date_str is None:
+        check_date = datetime.now().strftime("%Y-%m-%d")
+    else:
+        check_date = date_str
+    
+    for period in MERCURY_RETROGRADE_2025:
+        # Проверяем активную фазу ретрограда
+        if period["retrograde_start"] <= check_date <= period["retrograde_end"]:
+            return {
+                "status": "retrograde",
+                "phase": period["phase"],
+                "signs": period["signs"],
+                "influences": period["influences"],
+                "start_date": period["retrograde_start"],
+                "end_date": period["retrograde_end"],
+                "message": f"🪐 Меркурий в ретрограде в знаке {', '.join(period['signs'])}! Будьте осторожны с коммуникациями."
+            }
+        
+        # Проверяем теневую фазу (до ретрограда)
+        elif period["pre_shadow_start"] <= check_date < period["retrograde_start"]:
+            return {
+                "status": "pre_shadow", 
+                "phase": period["phase"],
+                "signs": period["signs"],
+                "influences": period["influences"],
+                "start_date": period["retrograde_start"],
+                "end_date": period["retrograde_end"],
+                "message": f"⚡ Приближается ретроградный Меркурий! Начните подготовку с {period['retrograde_start']}."
+            }
+        
+        # Проверяем теневую фазу (после ретрограда)
+        elif period["retrograde_end"] < check_date <= period["post_shadow_end"]:
+            return {
+                "status": "post_shadow",
+                "phase": period["phase"], 
+                "signs": period["signs"],
+                "influences": period["influences"],
+                "start_date": period["retrograde_start"],
+                "end_date": period["retrograde_end"],
+                "message": f"🌅 Меркурий выходит из ретрограда. Эффекты ослабевают до {period['post_shadow_end']}."
+            }
+    
+    return {
+        "status": "direct",
+        "message": "✨ Меркурий движется прямо. Благоприятное время для коммуникаций и новых начинаний!",
+        "influences": {
+            "communication": "Отличное время для важных разговоров и переговоров",
+            "technology": "Техника работает стабильно, можно покупать новые устройства", 
+            "travel": "Путешествия проходят гладко, можно планировать поездки",
+            "contracts": "Благоприятное время для подписания договоров"
+        }
+    }
+
+def get_weekly_mercury_forecast():
+    """Получить прогноз влияния Меркурия на неделю"""
+    from datetime import datetime, timedelta
+    
+    today = datetime.now()
+    forecast = []
+    
+    for i in range(7):
+        date = (today + timedelta(days=i)).strftime("%Y-%m-%d")
+        status = get_mercury_status(date)
+        forecast.append({
+            "date": date,
+            "day_name": (today + timedelta(days=i)).strftime("%A"), 
+            "mercury_status": status["status"],
+            "message": status["message"],
+            "key_influences": list(status["influences"].keys())[:2] if "influences" in status else []
+        })
+    
+    return {
+        "week_forecast": forecast,
+        "summary": "Еженедельный прогноз влияния Меркурия на различные сферы жизни"
+    }
+
+# API endpoint для Меркурия
+@app.get("/api/mercury-status")
+async def get_mercury_retrograde_status(date: str = None):
+    """Получить текущий статус ретроградного Меркурия"""
+    try:
+        logger.info(f"Запрос статуса Меркурия на дату: {date}")
+        
+        mercury_info = get_mercury_status(date)
+        weekly_forecast = get_weekly_mercury_forecast()
+        
+        return {
+            "success": True,
+            "current_status": mercury_info,
+            "weekly_forecast": weekly_forecast,
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Ошибка получения статуса Меркурия: {str(e)}")
+        raise HTTPException(status_code=500, detail="Ошибка получения статуса Меркурия")
+
 
 # ============ ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ============
 def get_gnome_compatibility_analysis(percent: float) -> dict:
