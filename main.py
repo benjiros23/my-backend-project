@@ -36,7 +36,7 @@ app.add_middleware(
 )
 
 @app.options("/{full_path:path}")
-async def preflight_handler(request: Request, full_path: str):
+async  preflight_handler(request: Request, full_path: str):
     return {"message": "OK"}
 
 # ============ ГЛОБАЛЬНЫЙ ОБРАБОТЧИК ОШИБОК ============
@@ -476,16 +476,20 @@ async def join_room(request: JoinRoomRequest):
     try:
         room = game_rooms.get(request.room_id)
         if not room:
+            logger.warning(f"❌ Комната {request.room_id} не найдена")
             return {"success": False, "message": "Комната не найдена"}
         
         if len(room["players"]) >= 2:
+            logger.warning(f"❌ Комната {request.room_id} полна")
             return {"success": False, "message": "Комната полна"}
         
         if request.player_name not in room["players"]:
             room["players"].append(request.player_name)
+            logger.info(f"✅ Игрок {request.player_name} присоединился к комнате {request.room_id}")
         
         if len(room["players"]) == 2:
             room["status"] = "playing"
+            logger.info(f"🎮 Игра началась в комнате {request.room_id}")
         
         return {
             "success": True,
@@ -496,6 +500,7 @@ async def join_room(request: JoinRoomRequest):
     except Exception as e:
         logger.error(f"❌ Ошибка присоединения к комнате: {str(e)}")
         raise HTTPException(status_code=500, detail="Ошибка присоединения к комнате")
+
 
 @app.get("/api/room-status/{room_id}")
 async def get_room_status(room_id: str):
