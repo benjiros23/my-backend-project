@@ -29,18 +29,15 @@ app = FastAPI(
 # ============ CORS НАСТРОЙКА ============
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost",
-        "http://localhost:3000",
-        "http://localhost:8080",
-        "https://gilded-blancmange-ecc392.netlify.app",
-        "https://*.netlify.app",
-        "*"
-    ],
-    allow_credentials=True,
-    allow_methods=["*"],
+    allow_origins=["*"],
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
+
+@app.options("/{full_path:path}")
+async def preflight_handler(request: Request, full_path: str):
+    return {"message": "OK"}
 
 # ============ ГЛОБАЛЬНЫЙ ОБРАБОТЧИК ОШИБОК ============
 @app.exception_handler(500)
@@ -106,6 +103,123 @@ DAY_CARDS = [
     {"название": "Гном-звездочет", "совет": "Прислушайтесь к знакам Вселенной. Сегодня особенно важны интуиция и мечты."}
 ]
 
+# ============ РЕТРОГРАДНЫЙ МЕРКУРИЙ ============
+MERCURY_RETROGRADE_2025 = [
+    {
+        "phase": "Mercury Retrograde #1",
+        "pre_shadow_start": "2025-02-28",
+        "retrograde_start": "2025-03-14", 
+        "retrograde_end": "2025-04-07",
+        "post_shadow_end": "2025-04-26",
+        "signs": ["Aries", "Pisces"],
+        "influences": {
+            "communication": "Будьте осторожны в переписке, перечитывайте сообщения дважды",
+            "travel": "Планы поездок могут измениться, проверяйте билеты",
+            "technology": "Делайте резервные копии данных, технические сбои возможны",
+            "relationships": "Старые знакомые могут неожиданно выйти на связь"
+        }
+    },
+    {
+        "phase": "Mercury Retrograde #2", 
+        "pre_shadow_start": "2025-06-29",
+        "retrograde_start": "2025-07-17",
+        "retrograde_end": "2025-08-11", 
+        "post_shadow_end": "2025-08-25",
+        "signs": ["Leo"],
+        "influences": {
+            "creativity": "Пересмотрите творческие проекты, вдохновение найдет новые пути",
+            "self_expression": "Осторожнее с публичными заявлениями и самопрезентацией", 
+            "romance": "В отношениях возможны недопонимания из-за гордости",
+            "performance": "Выступления и презентации требуют особой подготовки"
+        }
+    },
+    {
+        "phase": "Mercury Retrograde #3",
+        "pre_shadow_start": "2025-10-21", 
+        "retrograde_start": "2025-11-09",
+        "retrograde_end": "2025-11-29",
+        "post_shadow_end": "2025-12-16", 
+        "signs": ["Sagittarius"],
+        "influences": {
+            "learning": "Пересмотрите планы обучения, возможны задержки в учебе",
+            "travel": "Дальние поездки требуют особого внимания к деталям",
+            "beliefs": "Время переосмыслить свои взгляды и философию жизни", 
+            "legal": "Юридические вопросы лучше отложить на более поздний срок"
+        }
+    }
+]
+
+def get_mercury_status(date_str: str = None):
+    """Проверяет статус Меркурия на указанную дату"""
+    if date_str is None:
+        check_date = datetime.now().strftime("%Y-%m-%d")
+    else:
+        check_date = date_str
+    
+    for period in MERCURY_RETROGRADE_2025:
+        if period["retrograde_start"] <= check_date <= period["retrograde_end"]:
+            return {
+                "status": "retrograde",
+                "phase": period["phase"],
+                "signs": period["signs"],
+                "influences": period["influences"],
+                "start_date": period["retrograde_start"],
+                "end_date": period["retrograde_end"],
+                "message": f"🪐 Меркурий в ретрограде в знаке {', '.join(period['signs'])}! Будьте осторожны с коммуникациями."
+            }
+        elif period["pre_shadow_start"] <= check_date < period["retrograde_start"]:
+            return {
+                "status": "pre_shadow", 
+                "phase": period["phase"],
+                "signs": period["signs"],
+                "influences": period["influences"],
+                "start_date": period["retrograde_start"],
+                "end_date": period["retrograde_end"],
+                "message": f"⚡ Приближается ретроградный Меркурий! Начните подготовку с {period['retrograde_start']}."
+            }
+        elif period["retrograde_end"] < check_date <= period["post_shadow_end"]:
+            return {
+                "status": "post_shadow",
+                "phase": period["phase"], 
+                "signs": period["signs"],
+                "influences": period["influences"],
+                "start_date": period["retrograde_start"],
+                "end_date": period["retrograde_end"],
+                "message": f"🌅 Меркурий выходит из ретрограда. Эффекты ослабевают до {period['post_shadow_end']}."
+            }
+    
+    return {
+        "status": "direct",
+        "message": "✨ Меркурий движется прямо. Благоприятное время для коммуникаций и новых начинаний!",
+        "influences": {
+            "communication": "Отличное время для важных разговоров и переговоров",
+            "technology": "Техника работает стабильно, можно покупать новые устройства", 
+            "travel": "Путешествия проходят гладко, можно планировать поездки",
+            "contracts": "Благоприятное время для подписания договоров"
+        }
+    }
+
+def get_weekly_mercury_forecast():
+    """Получить прогноз влияния Меркурия на неделю"""
+    today = datetime.now()
+    forecast = []
+    
+    for i in range(7):
+        date = (today + timedelta(days=i)).strftime("%Y-%m-%d")
+        status = get_mercury_status(date)
+        forecast.append({
+            "date": date,
+            "day_name": (today + timedelta(days=i)).strftime("%A"), 
+            "mercury_status": status["status"],
+            "message": status["message"],
+            "key_influences": list(status["influences"].keys())[:2] if "influences" in status else []
+        })
+    
+    return {
+        "week_forecast": forecast,
+        "summary": "Еженедельный прогноз влияния Меркурия на различные сферы жизни"
+    }
+
 # ============ ЗАГРУЗКА ВОПРОСОВ ============
 COUPLE_GAMES_DATA = {}
 
@@ -140,7 +254,6 @@ def load_questions_from_file():
             logger.warning(f"❌ Ошибка загрузки {file_path}: {e}")
             continue
     
-    # Fallback данные если файл не найден
     logger.warning("⚠️ JSON файл не найден, используем fallback данные")
     COUPLE_GAMES_DATA = {
         "fruit_game": [
@@ -160,7 +273,6 @@ def load_questions_from_file():
     }
     return False
 
-# Загружаем вопросы при запуске
 load_questions_from_file()
 
 # ============ ХРАНИЛИЩА ДАННЫХ ============
@@ -180,11 +292,12 @@ async def root():
         "categories": list(COUPLE_GAMES_DATA.keys()),
         "endpoints": [
             "GET /health",
-            "GET /api/questions",
+            "GET /api/questions", 
             "GET /api/horoscope?sign=ЗНАК",
             "POST /api/day-card",
             "GET /api/favorites",
             "POST /api/favorites",
+            "GET /api/mercury-status",
             "POST /api/create-room",
             "POST /api/join-room",
             "GET /api/room-status/{room_id}",
@@ -226,7 +339,7 @@ async def get_horoscope(sign: str, date: str = None):
         raise HTTPException(status_code=500, detail="Ошибка при получении гороскопа")
 
 @app.post("/api/day-card")
-async def get_day_card(request: Dict[str, Any] = None):
+async def get_day_card(request: Dict[str, Any] = {}):
     """Детерминированная карта дня"""
     try:
         logger.info("Запрос карты дня")
@@ -305,8 +418,27 @@ async def get_all_questions():
         "categories": list(COUPLE_GAMES_DATA.keys())
     }
 
+@app.get("/api/mercury-status")
+async def get_mercury_retrograde_status(date: str = None):
+    """Получить текущий статус ретроградного Меркурия"""
+    try:
+        logger.info(f"Запрос статуса Меркурия на дату: {date}")
+        
+        mercury_info = get_mercury_status(date)
+        weekly_forecast = get_weekly_mercury_forecast()
+        
+        return {
+            "success": True,
+            "current_status": mercury_info,
+            "weekly_forecast": weekly_forecast,
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Ошибка получения статуса Меркурия: {str(e)}")
+        raise HTTPException(status_code=500, detail="Ошибка получения статуса Меркурия")
+
 # ============ МАРШРУТЫ ДЛЯ ИГР ============
-# ============ НОВАЯ ЛОГИКА ИГР ============
 @app.post("/api/create-room")
 async def create_room(request: CreateRoomRequest):
     """Создать игровую комнату с новой логикой"""
@@ -319,10 +451,10 @@ async def create_room(request: CreateRoomRequest):
             "players": [request.creator_name],
             "game_type": request.game_type,
             "current_question": 0,
-            "current_phase": 1,  # 1 = Player1 отвечает, Player2 угадывает
-            "current_answerer": request.creator_name,  # Кто сейчас отвечает за себя
-            "answers": {},  # Ответы игроков о себе
-            "guesses": {},  # Догадки игроков о партнерах
+            "current_phase": 1,
+            "current_answerer": request.creator_name,
+            "answers": {},
+            "guesses": {},
             "status": "waiting"
         }
         
@@ -338,6 +470,52 @@ async def create_room(request: CreateRoomRequest):
         logger.error(f"❌ Ошибка создания комнаты: {str(e)}")
         raise HTTPException(status_code=500, detail="Ошибка создания комнаты")
 
+@app.post("/api/join-room")
+async def join_room(request: JoinRoomRequest):
+    """Присоединиться к игровой комнате"""
+    try:
+        room = game_rooms.get(request.room_id)
+        if not room:
+            return {"success": False, "message": "Комната не найдена"}
+        
+        if len(room["players"]) >= 2:
+            return {"success": False, "message": "Комната полна"}
+        
+        if request.player_name not in room["players"]:
+            room["players"].append(request.player_name)
+        
+        if len(room["players"]) == 2:
+            room["status"] = "playing"
+        
+        return {
+            "success": True,
+            "message": "Присоединился к игре!",
+            "players": room["players"],
+            "status": room["status"]
+        }
+    except Exception as e:
+        logger.error(f"❌ Ошибка присоединения к комнате: {str(e)}")
+        raise HTTPException(status_code=500, detail="Ошибка присоединения к комнате")
+
+@app.get("/api/room-status/{room_id}")
+async def get_room_status(room_id: str):
+    """Получить статус комнаты"""
+    try:
+        room = game_rooms.get(room_id)
+        if not room:
+            raise HTTPException(status_code=404, detail="Комната не найдена")
+        
+        return {
+            "room_id": room_id,
+            "players": room["players"],
+            "status": room["status"],
+            "current_question": room["current_question"],
+            "player_count": len(room["players"])
+        }
+    except Exception as e:
+        logger.error(f"❌ Ошибка получения статуса комнаты: {str(e)}")
+        raise HTTPException(status_code=500, detail="Ошибка получения статуса")
+
 @app.get("/api/game-question/{room_id}")
 async def get_game_question(room_id: str):
     """Получить текущий вопрос с правильной логикой"""
@@ -346,7 +524,6 @@ async def get_game_question(room_id: str):
         if not room:
             raise HTTPException(status_code=404, detail="Комната не найдена")
         
-        # Получаем вопросы
         game_questions = []
         if room["game_type"] == "mixed":
             for category in COUPLE_GAMES_DATA.values():
@@ -354,15 +531,12 @@ async def get_game_question(room_id: str):
         else:
             game_questions = COUPLE_GAMES_DATA.get(room["game_type"], [])
         
-        # Проверяем завершение игры
-        total_rounds = len(game_questions) * 2  # Каждый вопрос в двух фазах
+        total_rounds = len(game_questions) * 2
         
         if room["current_question"] >= total_rounds:
             room["status"] = "completed"
-            logger.info(f"🏁 Игра завершена! Всего раундов: {room['current_question']}")
             return {"completed": True, "message": "Игра завершена!"}
         
-        # Определяем текущий вопрос и фазу
         question_index = (room["current_question"] // 2) % len(game_questions)
         phase = room["current_phase"]
         current_answerer = room["current_answerer"]
@@ -370,31 +544,24 @@ async def get_game_question(room_id: str):
         
         question_data = game_questions[question_index]
         
-        # ✅ НОВАЯ ЛОГИКА: Разные формулировки для разных ролей
-        if current_answerer == players[0]:  # Player1 отвечает
+        if current_answerer == players[0]:
             if phase == 1:
-                # Player1 отвечает за себя
                 question_text = question_data["question"].replace("партнер", "вы").replace("ваш партнер", "вы")
                 instruction = f"({players[0]} отвечает за себя)"
                 role = "answering"
             else:
-                # Player1 угадывает ответ Player2
                 question_text = question_data["question"].replace("партнер", players[1])
                 instruction = f"({players[0]} угадывает предпочтения {players[1]})"
                 role = "guessing"
-        else:  # Player2
+        else:
             if phase == 1:
-                # Player2 угадывает ответ Player1
                 question_text = question_data["question"].replace("партнер", players[0])
                 instruction = f"({players[1]} угадывает предпочтения {players[0]})"
                 role = "guessing"
             else:
-                # Player2 отвечает за себя
                 question_text = question_data["question"].replace("партнер", "вы").replace("ваш партнер", "вы")
                 instruction = f"({players[1]} отвечает за себя)"
                 role = "answering"
-        
-        logger.info(f"❓ Вопрос {room['current_question']+1}/{total_rounds}, фаза {phase}, отвечает: {current_answerer}")
         
         return {
             "question_id": room["current_question"],
@@ -406,12 +573,10 @@ async def get_game_question(room_id: str):
             "current_number": room["current_question"] + 1,
             "phase": phase,
             "current_answerer": current_answerer,
-            "role": role,  # "answering" или "guessing"
+            "role": role,
             "source": "JSON file"
         }
         
-    except HTTPException:
-        raise
     except Exception as e:
         logger.error(f"❌ Ошибка get_game_question: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -428,57 +593,38 @@ async def submit_answer(request: AnswerRequest):
         current_answerer = room["current_answerer"]
         phase = room["current_phase"]
         
-        # Определяем, что это - ответ за себя или догадка о партнере
         if request.player_name == current_answerer:
             if phase == 1 and current_answerer == players[0]:
-                # Player1 отвечает за себя
                 room["answers"][f"{request.question_id}_{players[0]}"] = request.answer
-                logger.info(f"💭 {players[0]} ответил за себя: {request.answer}")
             elif phase == 2 and current_answerer == players[1]:
-                # Player2 отвечает за себя
                 room["answers"][f"{request.question_id}_{players[1]}"] = request.answer
-                logger.info(f"💭 {players[1]} ответил за себя: {request.answer}")
             else:
-                # Игрок угадывает
                 target_player = players[1] if request.player_name == players[0] else players[0]
                 room["guesses"][f"{request.question_id}_{request.player_name}_about_{target_player}"] = request.answer
-                logger.info(f"🔮 {request.player_name} угадывает про {target_player}: {request.answer}")
         else:
-            # Второй игрок (не current_answerer) всегда угадывает
             target_player = current_answerer
             room["guesses"][f"{request.question_id}_{request.player_name}_about_{target_player}"] = request.answer
-            logger.info(f"🔮 {request.player_name} угадывает про {target_player}: {request.answer}")
         
-        # Проверяем, ответили ли оба игрока в текущем раунде
         round_complete = False
         if phase == 1:
-            # Проверяем, есть ли ответ от отвечающего и догадка от угадывающего
             answer_key = f"{request.question_id}_{current_answerer}"
             guesser = players[1] if current_answerer == players[0] else players[0]
             guess_key = f"{request.question_id}_{guesser}_about_{current_answerer}"
-            
             round_complete = answer_key in room["answers"] and guess_key in room["guesses"]
         else:
-            # Аналогично для phase 2
             answer_key = f"{request.question_id}_{current_answerer}"
             guesser = players[0] if current_answerer == players[1] else players[1]
             guess_key = f"{request.question_id}_{guesser}_about_{current_answerer}"
-            
             round_complete = answer_key in room["answers"] and guess_key in room["guesses"]
         
         if round_complete:
-            # Переходим к следующей фазе или следующему вопросу
             if phase == 1:
-                # Переходим к фазе 2 (меняем роли)
                 room["current_phase"] = 2
                 room["current_answerer"] = players[1] if current_answerer == players[0] else players[0]
             else:
-                # Переходим к следующему вопросу
                 room["current_question"] += 1
                 room["current_phase"] = 1
-                room["current_answerer"] = players[0]  # Начинаем с первого игрока
-            
-            logger.info(f"✅ Раунд завершен! Переход к следующему этапу")
+                room["current_answerer"] = players[0]
         
         return {
             "success": True,
@@ -486,8 +632,6 @@ async def submit_answer(request: AnswerRequest):
             "message": "Ответ сохранен!" if not round_complete else "Оба ответили! Следующий этап."
         }
         
-    except HTTPException:
-        raise
     except Exception as e:
         logger.error(f"❌ Ошибка отправки ответа: {str(e)}")
         raise HTTPException(status_code=500, detail="Ошибка отправки ответа")
@@ -496,8 +640,6 @@ async def submit_answer(request: AnswerRequest):
 async def get_game_results(room_id: str):
     """Получить результаты игры с новой логикой подсчета"""
     try:
-        logger.info(f"🏆 Запрос результатов для комнаты: {room_id}")
-        
         room = game_rooms.get(room_id)
         if not room:
             raise HTTPException(status_code=404, detail="Комната не найдена")
@@ -509,12 +651,10 @@ async def get_game_results(room_id: str):
         answers = room.get("answers", {})
         guesses = room.get("guesses", {})
         
-        # Подсчитываем правильные догадки
         correct_guesses = 0
         total_guesses = 0
         results = []
         
-        # Получаем количество вопросов
         game_questions = []
         if room["game_type"] == "mixed":
             for category in COUPLE_GAMES_DATA.values():
@@ -523,15 +663,11 @@ async def get_game_results(room_id: str):
             game_questions = COUPLE_GAMES_DATA.get(room["game_type"], [])
         
         for q_id in range(len(game_questions)):
-            # Player1 отвечает, Player2 угадывает
             p1_answer = answers.get(f"{q_id}_{players[0]}")
             p2_guess_about_p1 = guesses.get(f"{q_id}_{players[1]}_about_{players[0]}")
-            
-            # Player2 отвечает, Player1 угадывает  
             p2_answer = answers.get(f"{q_id}_{players[1]}")
             p1_guess_about_p2 = guesses.get(f"{q_id}_{players[0]}_about_{players[1]}")
             
-            # Проверяем правильность догадок
             if p1_answer and p2_guess_about_p1:
                 total_guesses += 1
                 if p1_answer == p2_guess_about_p1:
@@ -553,13 +689,8 @@ async def get_game_results(room_id: str):
                 "p1_guessed_p2_correctly": p2_answer == p1_guess_about_p2 if p2_answer and p1_guess_about_p2 else False
             })
         
-        # Вычисляем процент правильных догадок
         compatibility_percent = (correct_guesses / total_guesses * 100) if total_guesses > 0 else 0
-        
-        # Анализ от гномов
         gnome_analysis = get_gnome_compatibility_analysis(compatibility_percent)
-        
-        logger.info(f"✅ Результаты: {correct_guesses}/{total_guesses} правильных догадок ({compatibility_percent:.1f}%)")
         
         return {
             "completed": True,
@@ -571,158 +702,9 @@ async def get_game_results(room_id: str):
             "explanation": f"Из {total_guesses} попыток угадать предпочтения партнера правильными оказались {correct_guesses}"
         }
         
-    except HTTPException:
-        raise
     except Exception as e:
         logger.error(f"❌ Критическая ошибка: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
-        # ============ РЕТРОГРАДНЫЙ МЕРКУРИЙ ============
-MERCURY_RETROGRADE_2025 = [
-    {
-        "phase": "Mercury Retrograde #1",
-        "pre_shadow_start": "2025-02-28",
-        "retrograde_start": "2025-03-14", 
-        "retrograde_end": "2025-04-07",
-        "post_shadow_end": "2025-04-26",
-        "signs": ["Aries", "Pisces"],
-        "influences": {
-            "communication": "Будьте осторожны в переписке, перечитывайте сообщения дважды",
-            "travel": "Планы поездок могут измениться, проверяйте билеты",
-            "technology": "Делайте резервные копии данных, технические сбои возможны",
-            "relationships": "Старые знакомые могут неожиданно выйти на связь"
-        }
-    },
-    {
-        "phase": "Mercury Retrograde #2", 
-        "pre_shadow_start": "2025-06-29",
-        "retrograde_start": "2025-07-17",
-        "retrograde_end": "2025-08-11", 
-        "post_shadow_end": "2025-08-25",
-        "signs": ["Leo"],
-        "influences": {
-            "creativity": "Пересмотрите творческие проекты, вдохновение найдет новые пути",
-            "self_expression": "Осторожнее с публичными заявлениями и самопрезентацией", 
-            "romance": "В отношениях возможны недопонимания из-за гордости",
-            "performance": "Выступления и презентации требуют особой подготовки"
-        }
-    },
-    {
-        "phase": "Mercury Retrograde #3",
-        "pre_shadow_start": "2025-10-21", 
-        "retrograde_start": "2025-11-09",
-        "retrograde_end": "2025-11-29",
-        "post_shadow_end": "2025-12-16", 
-        "signs": ["Sagittarius"],
-        "influences": {
-            "learning": "Пересмотрите планы обучения, возможны задержки в учебе",
-            "travel": "Дальние поездки требуют особого внимания к деталям",
-            "beliefs": "Время переосмыслить свои взгляды и философию жизни", 
-            "legal": "Юридические вопросы лучше отложить на более поздний срок"
-        }
-    }
-]
-
-def get_mercury_status(date_str: str = None):
-    """Проверяет статус Меркурия на указанную дату"""
-    from datetime import datetime
-    
-    if date_str is None:
-        check_date = datetime.now().strftime("%Y-%m-%d")
-    else:
-        check_date = date_str
-    
-    for period in MERCURY_RETROGRADE_2025:
-        # Проверяем активную фазу ретрограда
-        if period["retrograde_start"] <= check_date <= period["retrograde_end"]:
-            return {
-                "status": "retrograde",
-                "phase": period["phase"],
-                "signs": period["signs"],
-                "influences": period["influences"],
-                "start_date": period["retrograde_start"],
-                "end_date": period["retrograde_end"],
-                "message": f"🪐 Меркурий в ретрограде в знаке {', '.join(period['signs'])}! Будьте осторожны с коммуникациями."
-            }
-        
-        # Проверяем теневую фазу (до ретрограда)
-        elif period["pre_shadow_start"] <= check_date < period["retrograde_start"]:
-            return {
-                "status": "pre_shadow", 
-                "phase": period["phase"],
-                "signs": period["signs"],
-                "influences": period["influences"],
-                "start_date": period["retrograde_start"],
-                "end_date": period["retrograde_end"],
-                "message": f"⚡ Приближается ретроградный Меркурий! Начните подготовку с {period['retrograde_start']}."
-            }
-        
-        # Проверяем теневую фазу (после ретрограда)
-        elif period["retrograde_end"] < check_date <= period["post_shadow_end"]:
-            return {
-                "status": "post_shadow",
-                "phase": period["phase"], 
-                "signs": period["signs"],
-                "influences": period["influences"],
-                "start_date": period["retrograde_start"],
-                "end_date": period["retrograde_end"],
-                "message": f"🌅 Меркурий выходит из ретрограда. Эффекты ослабевают до {period['post_shadow_end']}."
-            }
-    
-    return {
-        "status": "direct",
-        "message": "✨ Меркурий движется прямо. Благоприятное время для коммуникаций и новых начинаний!",
-        "influences": {
-            "communication": "Отличное время для важных разговоров и переговоров",
-            "technology": "Техника работает стабильно, можно покупать новые устройства", 
-            "travel": "Путешествия проходят гладко, можно планировать поездки",
-            "contracts": "Благоприятное время для подписания договоров"
-        }
-    }
-
-def get_weekly_mercury_forecast():
-    """Получить прогноз влияния Меркурия на неделю"""
-    from datetime import datetime, timedelta
-    
-    today = datetime.now()
-    forecast = []
-    
-    for i in range(7):
-        date = (today + timedelta(days=i)).strftime("%Y-%m-%d")
-        status = get_mercury_status(date)
-        forecast.append({
-            "date": date,
-            "day_name": (today + timedelta(days=i)).strftime("%A"), 
-            "mercury_status": status["status"],
-            "message": status["message"],
-            "key_influences": list(status["influences"].keys())[:2] if "influences" in status else []
-        })
-    
-    return {
-        "week_forecast": forecast,
-        "summary": "Еженедельный прогноз влияния Меркурия на различные сферы жизни"
-    }
-
-# API endpoint для Меркурия
-@app.get("/api/mercury-status")
-async def get_mercury_retrograde_status(date: str = None):
-    """Получить текущий статус ретроградного Меркурия"""
-    try:
-        logger.info(f"Запрос статуса Меркурия на дату: {date}")
-        
-        mercury_info = get_mercury_status(date)
-        weekly_forecast = get_weekly_mercury_forecast()
-        
-        return {
-            "success": True,
-            "current_status": mercury_info,
-            "weekly_forecast": weekly_forecast,
-            "timestamp": datetime.now(timezone.utc).isoformat()
-        }
-        
-    except Exception as e:
-        logger.error(f"Ошибка получения статуса Меркурия: {str(e)}")
-        raise HTTPException(status_code=500, detail="Ошибка получения статуса Меркурия")
-
 
 # ============ ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ============
 def get_gnome_compatibility_analysis(percent: float) -> dict:
@@ -770,8 +752,4 @@ if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
     logger.info(f"🚀 Запуск Gnome Horoscope API на порту {port}")
     
-    uvicorn.run(
-        app, 
-        host="0.0.0.0", 
-        port=port
-    )
+    uvicorn.run(app, host="0.0.0.0", port=port)
