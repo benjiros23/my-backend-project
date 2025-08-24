@@ -306,9 +306,10 @@ async def get_all_questions():
     }
 
 # ============ МАРШРУТЫ ДЛЯ ИГР ============
+# ============ НОВАЯ ЛОГИКА ИГР ============
 @app.post("/api/create-room")
 async def create_room(request: CreateRoomRequest):
-    """Создать игровую комнату"""
+    """Создать игровую комнату с новой логикой"""
     try:
         room_id = str(uuid.uuid4())[:8].upper()
         
@@ -318,7 +319,10 @@ async def create_room(request: CreateRoomRequest):
             "players": [request.creator_name],
             "game_type": request.game_type,
             "current_question": 0,
-            "answers": {},
+            "current_phase": 1,  # 1 = Player1 отвечает, Player2 угадывает
+            "current_answerer": request.creator_name,  # Кто сейчас отвечает за себя
+            "answers": {},  # Ответы игроков о себе
+            "guesses": {},  # Догадки игроков о партнерах
             "status": "waiting"
         }
         
@@ -334,70 +338,15 @@ async def create_room(request: CreateRoomRequest):
         logger.error(f"❌ Ошибка создания комнаты: {str(e)}")
         raise HTTPException(status_code=500, detail="Ошибка создания комнаты")
 
-@app.post("/api/join-room")
-async def join_room(request: JoinRoomRequest):
-    """Присоединиться к игровой комнате"""
-    try:
-        room = game_rooms.get(request.room_id)
-        if not room:
-            logger.warning(f"❌ Комната {request.room_id} не найдена")
-            return {"success": False, "message": "Комната не найдена"}
-        
-        if len(room["players"]) >= 2:
-            logger.warning(f"❌ Комната {request.room_id} полна")
-            return {"success": False, "message": "Комната полна"}
-        
-        if request.player_name not in room["players"]:
-            room["players"].append(request.player_name)
-            logger.info(f"✅ Игрок {request.player_name} присоединился к комнате {request.room_id}")
-        
-        if len(room["players"]) == 2:
-            room["status"] = "playing"
-            logger.info(f"🎮 Игра началась в комнате {request.room_id}")
-        
-        return {
-            "success": True,
-            "message": "Присоединился к игре!",
-            "players": room["players"],
-            "status": room["status"]
-        }
-    except Exception as e:
-        logger.error(f"❌ Ошибка присоединения к комнате: {str(e)}")
-        raise HTTPException(status_code=500, detail="Ошибка присоединения к комнате")
-
-@app.get("/api/room-status/{room_id}")
-async def get_room_status(room_id: str):
-    """Получить статус комнаты"""
-    try:
-        room = game_rooms.get(room_id)
-        if not room:
-            logger.warning(f"❌ Запрос статуса несуществующей комнаты: {room_id}")
-            raise HTTPException(status_code=404, detail="Комната не найдена")
-        
-        logger.info(f"📊 Статус комнаты {room_id}: {room['status']}, игроков: {len(room['players'])}")
-        
-        return {
-            "room_id": room_id,
-            "players": room["players"],
-            "status": room["status"],
-            "current_question": room["current_question"],
-            "player_count": len(room["players"])
-        }
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"❌ Ошибка получения статуса комнаты: {str(e)}")
-        raise HTTPException(status_code=500, detail="Ошибка получения статуса")
-
 @app.get("/api/game-question/{room_id}")
 async def get_game_question(room_id: str):
-    """Получить текущий вопрос игры"""
+    """Получить текущий вопрос с правильной логикой"""
     try:
         room = game_rooms.get(room_id)
         if not room:
             raise HTTPException(status_code=404, detail="Комната не найдена")
         
-        # Получаем вопросы из загруженного JSON
+        # Получаем вопросы
         game_questions = []
         if room["game_type"] == "mixed":
             for category in COUPLE_GAMES_DATA.values():
@@ -405,24 +354,59 @@ async def get_game_question(room_id: str):
         else:
             game_questions = COUPLE_GAMES_DATA.get(room["game_type"], [])
         
-        logger.info(f"❓ Комната {room_id}, тип: {room['game_type']}")
-        logger.info(f"📊 Всего вопросов: {len(game_questions)}, текущий: {room['current_question']}")
+        # Проверяем завершение игры
+        total_rounds = len(game_questions) * 2  # Каждый вопрос в двух фазах
         
-        if room["current_question"] >= len(game_questions):
+        if room["current_question"] >= total_rounds:
             room["status"] = "completed"
-            logger.info(f"🏁 Игра завершена! Пройдено: {room['current_question']}")
+            logger.info(f"🏁 Игра завершена! Всего раундов: {room['current_question']}")
             return {"completed": True, "message": "Игра завершена!"}
         
-        question = game_questions[room["current_question"]]
-        logger.info(f"✅ Отдаем вопрос {room['current_question']+1}/{len(game_questions)}")
+        # Определяем текущий вопрос и фазу
+        question_index = (room["current_question"] // 2) % len(game_questions)
+        phase = room["current_phase"]
+        current_answerer = room["current_answerer"]
+        players = room["players"]
+        
+        question_data = game_questions[question_index]
+        
+        # ✅ НОВАЯ ЛОГИКА: Разные формулировки для разных ролей
+        if current_answerer == players[0]:  # Player1 отвечает
+            if phase == 1:
+                # Player1 отвечает за себя
+                question_text = question_data["question"].replace("партнер", "вы").replace("ваш партнер", "вы")
+                instruction = f"({players[0]} отвечает за себя)"
+                role = "answering"
+            else:
+                # Player1 угадывает ответ Player2
+                question_text = question_data["question"].replace("партнер", players[1])
+                instruction = f"({players[0]} угадывает предпочтения {players[1]})"
+                role = "guessing"
+        else:  # Player2
+            if phase == 1:
+                # Player2 угадывает ответ Player1
+                question_text = question_data["question"].replace("партнер", players[0])
+                instruction = f"({players[1]} угадывает предпочтения {players[0]})"
+                role = "guessing"
+            else:
+                # Player2 отвечает за себя
+                question_text = question_data["question"].replace("партнер", "вы").replace("ваш партнер", "вы")
+                instruction = f"({players[1]} отвечает за себя)"
+                role = "answering"
+        
+        logger.info(f"❓ Вопрос {room['current_question']+1}/{total_rounds}, фаза {phase}, отвечает: {current_answerer}")
         
         return {
             "question_id": room["current_question"],
-            "question": question["question"],
-            "options": question["options"],
-            "category": question["category"],
-            "total_questions": len(game_questions),
+            "question": question_text,
+            "instruction": instruction,
+            "options": question_data["options"],
+            "category": question_data["category"],
+            "total_questions": total_rounds,
             "current_number": room["current_question"] + 1,
+            "phase": phase,
+            "current_answerer": current_answerer,
+            "role": role,  # "answering" или "guessing"
             "source": "JSON file"
         }
         
@@ -430,47 +414,78 @@ async def get_game_question(room_id: str):
         raise
     except Exception as e:
         logger.error(f"❌ Ошибка get_game_question: {str(e)}")
-        logger.error(f"📋 Трассировка: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/submit-answer")
 async def submit_answer(request: AnswerRequest):
-    """Отправить ответ на вопрос"""
+    """Отправить ответ с новой логикой"""
     try:
         room = game_rooms.get(request.room_id)
         if not room:
             raise HTTPException(status_code=404, detail="Комната не найдена")
         
-        answer_key = f"{request.question_id}_{request.player_name}"
-        room["answers"][answer_key] = request.answer
-        logger.info(f"💭 Ответ от {request.player_name} в комнате {request.room_id}: {request.answer}")
+        players = room["players"]
+        current_answerer = room["current_answerer"]
+        phase = room["current_phase"]
         
-        # Проверяем, ответили ли оба игрока
-        other_player = None
-        for player in room["players"]:
-            if player != request.player_name:
-                other_player = player
-                break
-        
-        if other_player:
-            other_answer_key = f"{request.question_id}_{other_player}"
-            both_answered = other_answer_key in room["answers"]
-            
-            if both_answered:
-                room["current_question"] += 1
-                logger.info(f"✅ Оба игрока ответили в комнате {request.room_id}, переход к вопросу {room['current_question']}")
-            
-            return {
-                "success": True,
-                "waiting_for_partner": not both_answered,
-                "message": "Ответ сохранен!" if not both_answered else "Оба ответили! Следующий вопрос."
-            }
+        # Определяем, что это - ответ за себя или догадка о партнере
+        if request.player_name == current_answerer:
+            if phase == 1 and current_answerer == players[0]:
+                # Player1 отвечает за себя
+                room["answers"][f"{request.question_id}_{players[0]}"] = request.answer
+                logger.info(f"💭 {players[0]} ответил за себя: {request.answer}")
+            elif phase == 2 and current_answerer == players[1]:
+                # Player2 отвечает за себя
+                room["answers"][f"{request.question_id}_{players[1]}"] = request.answer
+                logger.info(f"💭 {players[1]} ответил за себя: {request.answer}")
+            else:
+                # Игрок угадывает
+                target_player = players[1] if request.player_name == players[0] else players[0]
+                room["guesses"][f"{request.question_id}_{request.player_name}_about_{target_player}"] = request.answer
+                logger.info(f"🔮 {request.player_name} угадывает про {target_player}: {request.answer}")
         else:
-            return {
-                "success": True,
-                "waiting_for_partner": True,
-                "message": "Ждем второго игрока"
-            }
+            # Второй игрок (не current_answerer) всегда угадывает
+            target_player = current_answerer
+            room["guesses"][f"{request.question_id}_{request.player_name}_about_{target_player}"] = request.answer
+            logger.info(f"🔮 {request.player_name} угадывает про {target_player}: {request.answer}")
+        
+        # Проверяем, ответили ли оба игрока в текущем раунде
+        round_complete = False
+        if phase == 1:
+            # Проверяем, есть ли ответ от отвечающего и догадка от угадывающего
+            answer_key = f"{request.question_id}_{current_answerer}"
+            guesser = players[1] if current_answerer == players[0] else players[0]
+            guess_key = f"{request.question_id}_{guesser}_about_{current_answerer}"
+            
+            round_complete = answer_key in room["answers"] and guess_key in room["guesses"]
+        else:
+            # Аналогично для phase 2
+            answer_key = f"{request.question_id}_{current_answerer}"
+            guesser = players[0] if current_answerer == players[1] else players[1]
+            guess_key = f"{request.question_id}_{guesser}_about_{current_answerer}"
+            
+            round_complete = answer_key in room["answers"] and guess_key in room["guesses"]
+        
+        if round_complete:
+            # Переходим к следующей фазе или следующему вопросу
+            if phase == 1:
+                # Переходим к фазе 2 (меняем роли)
+                room["current_phase"] = 2
+                room["current_answerer"] = players[1] if current_answerer == players[0] else players[0]
+            else:
+                # Переходим к следующему вопросу
+                room["current_question"] += 1
+                room["current_phase"] = 1
+                room["current_answerer"] = players[0]  # Начинаем с первого игрока
+            
+            logger.info(f"✅ Раунд завершен! Переход к следующему этапу")
+        
+        return {
+            "success": True,
+            "waiting_for_partner": not round_complete,
+            "message": "Ответ сохранен!" if not round_complete else "Оба ответили! Следующий этап."
+        }
+        
     except HTTPException:
         raise
     except Exception as e:
@@ -479,83 +494,88 @@ async def submit_answer(request: AnswerRequest):
 
 @app.get("/api/game-results/{room_id}")
 async def get_game_results(room_id: str):
-    """Получить результаты игры с обработкой ошибок"""
+    """Получить результаты игры с новой логикой подсчета"""
     try:
         logger.info(f"🏆 Запрос результатов для комнаты: {room_id}")
         
         room = game_rooms.get(room_id)
         if not room:
-            logger.error(f"❌ Комната {room_id} не найдена")
             raise HTTPException(status_code=404, detail="Комната не найдена")
         
         if room["status"] != "completed":
-            logger.warning(f"⚠️ Игра в комнате {room_id} еще не завершена")
             return {"completed": False, "message": "Игра еще не завершена"}
         
-        # Проверяем данные
-        players = room.get("players", [])
+        players = room["players"]
         answers = room.get("answers", {})
-        current_question = room.get("current_question", 0)
+        guesses = room.get("guesses", {})
         
-        logger.info(f"📊 Игроки={len(players)}, ответы={len(answers)}, вопросов={current_question}")
-        
-        if len(players) < 2:
-            raise HTTPException(status_code=400, detail="Недостаточно игроков")
-        
-        # Безопасный подсчет совпадений
-        matches = 0
-        total_questions = current_question
+        # Подсчитываем правильные догадки
+        correct_guesses = 0
+        total_guesses = 0
         results = []
         
-        for q_id in range(total_questions):
-            try:
-                player1_key = f"{q_id}_{players[0]}"
-                player2_key = f"{q_id}_{players[1]}"
-                
-                player1_answer = answers.get(player1_key)
-                player2_answer = answers.get(player2_key)
-                
-                match = player1_answer == player2_answer and player1_answer is not None
-                if match:
-                    matches += 1
-                
-                results.append({
-                    "question_id": q_id,
-                    "player1_answer": player1_answer,
-                    "player2_answer": player2_answer,
-                    "match": match
-                })
-            except Exception as e:
-                logger.error(f"❌ Ошибка обработки вопроса {q_id}: {str(e)}")
-                continue
+        # Получаем количество вопросов
+        game_questions = []
+        if room["game_type"] == "mixed":
+            for category in COUPLE_GAMES_DATA.values():
+                game_questions.extend(category)
+        else:
+            game_questions = COUPLE_GAMES_DATA.get(room["game_type"], [])
         
-        # Безопасное вычисление процента
-        compatibility_percent = (matches / total_questions * 100) if total_questions > 0 else 0
+        for q_id in range(len(game_questions)):
+            # Player1 отвечает, Player2 угадывает
+            p1_answer = answers.get(f"{q_id}_{players[0]}")
+            p2_guess_about_p1 = guesses.get(f"{q_id}_{players[1]}_about_{players[0]}")
+            
+            # Player2 отвечает, Player1 угадывает  
+            p2_answer = answers.get(f"{q_id}_{players[1]}")
+            p1_guess_about_p2 = guesses.get(f"{q_id}_{players[0]}_about_{players[1]}")
+            
+            # Проверяем правильность догадок
+            if p1_answer and p2_guess_about_p1:
+                total_guesses += 1
+                if p1_answer == p2_guess_about_p1:
+                    correct_guesses += 1
+                    
+            if p2_answer and p1_guess_about_p2:
+                total_guesses += 1
+                if p2_answer == p1_guess_about_p2:
+                    correct_guesses += 1
+            
+            results.append({
+                "question_id": q_id,
+                "question": game_questions[q_id]["question"],
+                "player1_answer": p1_answer,
+                "player2_guess_about_player1": p2_guess_about_p1,
+                "player2_answer": p2_answer,
+                "player1_guess_about_player2": p1_guess_about_p2,
+                "p2_guessed_p1_correctly": p1_answer == p2_guess_about_p1 if p1_answer and p2_guess_about_p1 else False,
+                "p1_guessed_p2_correctly": p2_answer == p1_guess_about_p2 if p2_answer and p1_guess_about_p2 else False
+            })
+        
+        # Вычисляем процент правильных догадок
+        compatibility_percent = (correct_guesses / total_guesses * 100) if total_guesses > 0 else 0
+        
+        # Анализ от гномов
         gnome_analysis = get_gnome_compatibility_analysis(compatibility_percent)
         
-        logger.info(f"✅ Результаты: {matches}/{total_questions} ({compatibility_percent:.1f}%)")
+        logger.info(f"✅ Результаты: {correct_guesses}/{total_guesses} правильных догадок ({compatibility_percent:.1f}%)")
         
         return {
             "completed": True,
-            "matches": matches,
-            "total_questions": total_questions,
+            "correct_guesses": correct_guesses,
+            "total_guesses": total_guesses,
             "compatibility_percent": compatibility_percent,
             "results": results,
-            "gnome_analysis": gnome_analysis
+            "gnome_analysis": gnome_analysis,
+            "explanation": f"Из {total_guesses} попыток угадать предпочтения партнера правильными оказались {correct_guesses}"
         }
         
     except HTTPException:
         raise
     except Exception as e:
-        # Подробное логирование критических ошибок
-        error_trace = traceback.format_exc()
-        logger.error(f"❌ Критическая ошибка в get_game_results: {str(e)}")
-        logger.error(f"📋 Полная трассировка: {error_trace}")
-        
-        raise HTTPException(
-            status_code=500, 
-            detail=f"Внутренняя ошибка сервера: {str(e)}"
-        )
+        logger.error(f"❌ Критическая ошибка: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 # ============ ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ============
 def get_gnome_compatibility_analysis(percent: float) -> dict:
